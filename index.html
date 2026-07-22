@@ -8,7 +8,6 @@
 @import url('https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap');
 
 :root{
-  /* Higher-contrast, calmer base — size and weight carry the hierarchy, not color */
   --ink:#10161f;
   --ink-mid:#3d4653;
   --ink-soft:#5a6472;
@@ -37,9 +36,6 @@ body{
 button{font-family:'Archivo',sans-serif;}
 a{color:inherit;}
 
-/* ============ CONTAINER NUMBER — the thing you read out loud ============
-   No dark chip, no tiny type. Big, bold, wide-tracked JetBrains Mono:
-   slashed zero and disambiguated 1/l/I so BSIU vs 8S1U can't be misread. */
 .cnum{
   font-family:'JetBrains Mono',monospace;
   font-weight:700;
@@ -62,6 +58,10 @@ a{color:inherit;}
 .logo{font-weight:800;font-size:25px;letter-spacing:.02em;display:flex;align-items:center;gap:10px;}
 .logo .mark{display:inline-flex;width:30px;height:30px;border-radius:7px;background:var(--signal);color:var(--navy);align-items:center;justify-content:center;font-size:16px;font-weight:800;}
 .hdr-date{font-family:'JetBrains Mono',monospace;font-size:13.5px;font-weight:500;color:#9fb6c9;letter-spacing:.03em;}
+.sync-dot{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:#bcd0e0;}
+.sync-dot i{width:8px;height:8px;border-radius:50%;background:#4fae7a;display:inline-block;}
+.sync-dot.err i{background:#ff7a7a;}
+.sync-dot.err{color:#ffb4b4;}
 .hdr-spacer{flex:1;}
 .hdr-stats{display:flex;gap:24px;}
 .hstat{text-align:right;}
@@ -72,6 +72,8 @@ a{color:inherit;}
 .tab{background:none;border:none;color:#a6bcd0;font-size:16px;font-weight:700;padding:13px 18px;cursor:pointer;border-bottom:3px solid transparent;}
 .tab:hover{color:#fff;}
 .tab.on{color:#fff;border-bottom-color:var(--signal);}
+
+.err-banner{background:var(--rose-bg);color:var(--rose);font-size:14.5px;font-weight:700;padding:12px 24px;border-bottom:1.5px solid var(--rose);}
 
 /* ============ Controls ============ */
 .controls{display:flex;gap:11px;padding:15px 24px;align-items:center;border-bottom:1px solid var(--line);flex-wrap:wrap;background:var(--paper);position:sticky;top:0;z-index:10;}
@@ -98,6 +100,7 @@ select{cursor:pointer;}
 .btn:hover{filter:brightness(.93);}
 .btn-primary{background:var(--navy);color:#fff;}
 .btn-ghost{background:#fff;color:var(--navy);border:1.5px solid var(--line-2);}
+.btn:disabled{opacity:.5;cursor:not-allowed;}
 
 /* ============ Shared ============ */
 .type-pill{font-size:12.5px;font-weight:800;padding:4px 11px;border-radius:20px;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap;}
@@ -120,15 +123,12 @@ select{cursor:pointer;}
 .view{padding:22px 24px 70px;}
 .hint{font-size:14px;color:var(--ink-soft);}
 
-/* clip / attachment badge */
 .clip{
   display:inline-flex;align-items:center;gap:5px;font-size:13.5px;font-weight:800;
   color:var(--teal);background:var(--teal-bg);padding:4px 10px;border-radius:7px;white-space:nowrap;cursor:pointer;
 }
 .clip:hover{filter:brightness(.95);}
-.clip.none{color:var(--ink-soft);background:var(--gray-bg);}
 
-/* editable date cell */
 .date-cell{
   font-family:'JetBrains Mono',monospace;font-size:16.5px;font-weight:700;color:var(--ink);
   background:transparent;border:1.5px solid transparent;border-radius:8px;padding:6px 10px;
@@ -138,7 +138,6 @@ select{cursor:pointer;}
 .date-cell .cal{color:var(--ink-soft);display:inline-flex;}
 .date-cell.unset{color:var(--ink-soft);font-weight:600;}
 
-/* date popover */
 .pop-backdrop{position:fixed;inset:0;z-index:70;}
 .pop{
   position:fixed;z-index:71;background:#fff;border:1.5px solid var(--line-2);border-radius:12px;
@@ -238,7 +237,6 @@ table.grid{width:100%;border-collapse:collapse;background:var(--card);border-rad
 .seg button.on-live{background:var(--rust-bg);color:var(--rust);}
 .seg button.on-drop{background:#dce7f1;color:var(--navy-soft);}
 
-/* attachments */
 .attach-box{border:1.5px solid var(--line);border-radius:11px;padding:15px;background:#fbfaf7;}
 .attach-list{display:flex;flex-direction:column;gap:9px;margin-bottom:12px;}
 .attach-item{display:flex;align-items:center;gap:11px;background:#fff;border:1.5px solid var(--line);border-radius:9px;padding:11px 13px;}
@@ -287,8 +285,28 @@ table.grid{width:100%;border-collapse:collapse;background:var(--card);border-rad
 <body>
 <div id="root"></div>
 
-<script>
-'use strict';
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import {
+  getFirestore, collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot, writeBatch
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import {
+  getStorage, ref, uploadBytes, getDownloadURL, deleteObject
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
+
+/* ================= Firebase ================= */
+const firebaseConfig = {
+  apiKey: "AIzaSyAjYSQKIW-Msh9VLMm4ZaOsRTWZ-T7t6vQ",
+  authDomain: "jct-inbound-tracker.firebaseapp.com",
+  projectId: "jct-inbound-tracker",
+  storageBucket: "jct-inbound-tracker.firebasestorage.app",
+  messagingSenderId: "310403363155",
+  appId: "1:310403363155:web:c7d58b565ab6aa606971a6"
+};
+const fbApp = initializeApp(firebaseConfig);
+const db = getFirestore(fbApp);
+const storageRef = getStorage(fbApp);
+const containersCol = collection(db, 'containers');
 
 /* ================= constants ================= */
 const STATUS_META = {
@@ -299,7 +317,7 @@ const STATUS_META = {
 };
 const STATUS_ORDER = ['pending','offloaded','delivered','completed'];
 const NEXT_STATUS = {pending:'offloaded', offloaded:'delivered', delivered:'completed'};
-const MAX_FILE = 3_400_000; // ~3.4MB raw; base64 inflates ~33% and the per-key cap is 5MB
+const MAX_FILE = 15 * 1024 * 1024;
 
 /* ================= state ================= */
 let state = {
@@ -314,10 +332,13 @@ let state = {
   formType:'live',
   showImport:false,
   importRows:[],
-  datePop:null,        // {id, x, y}
+  datePop:null,
   uploading:false,
   uploadError:'',
   loaded:false,
+  syncError:'',
+  migrating:false,
+  migrateMsg:'',
 };
 
 /* ================= helpers ================= */
@@ -338,14 +359,12 @@ function timePart(str){
   const m = String(str).match(/\d{1,2}\/\d{1,2}\/\d{4}\s*(.*)$/);
   return m && m[1] ? m[1].trim() : '';
 }
-/* "7/22/2026" -> "2026-07-22" for the native calendar input */
 function toISO(str){
   const d = parseLooseDate(str);
   if(!d) return '';
   const p = n => String(n).padStart(2,'0');
   return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
 }
-/* "2026-07-22" -> "7/22/2026" to keep the stored format (and CSV export) stable */
 function fromISO(iso){
   if(!iso) return '';
   const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -381,38 +400,65 @@ function fmtSize(b){
 }
 function attCount(c){ return (c.attachments||[]).length; }
 
-/* ================= storage =================
-   Containers live in one key. Each attachment gets its OWN key so a single
-   large packing list can never blow the per-key cap for the whole list. */
-async function loadData(){
-  try{
-    const res = await window.storage.get('containers', true);
-    state.containers = res && res.value ? JSON.parse(res.value) : [];
-  }catch(e){ state.containers = []; }
-  state.loaded = true;
-  render();
+/* ================= Firestore sync ================= */
+let unsub = null;
+function startSync(){
+  unsub = onSnapshot(containersCol, snap => {
+    const rows = [];
+    snap.forEach(d => rows.push({ ...d.data(), id: d.id }));
+    state.containers = rows;
+    state.loaded = true;
+    state.syncError = '';
+    if(!state.showForm && !state.showImport && !state.datePop) render();
+  }, err => {
+    state.loaded = true;
+    state.syncError = err.message || 'Could not connect to the database.';
+    render();
+  });
 }
-async function saveData(){
-  try{ await window.storage.set('containers', JSON.stringify(state.containers), true); }
-  catch(e){ console.error('save failed', e); }
-  render();
+async function createContainer(data){
+  const id = uid();
+  await setDoc(doc(db,'containers',id), {...data, attachments:[]});
+  return id;
 }
-function attKey(cid, aid){ return `attach:${cid}:${aid}`; }
-async function putAttachment(cid, aid, dataUrl){
-  return window.storage.set(attKey(cid,aid), dataUrl, true);
+async function patchContainer(id, patch){
+  await updateDoc(doc(db,'containers',id), patch);
 }
-async function getAttachment(cid, aid){
-  const r = await window.storage.get(attKey(cid,aid), true);
-  return r ? r.value : null;
+async function removeContainer(id){
+  await deleteDoc(doc(db,'containers',id));
 }
-async function dropAttachment(cid, aid){
-  try{ await window.storage.delete(attKey(cid,aid), true); }catch(e){}
+async function bulkCreate(list){
+  for(let i=0;i<list.length;i+=400){
+    const chunk = list.slice(i,i+400);
+    const batch = writeBatch(db);
+    chunk.forEach(c=>{
+      const {id, ...rest} = c;
+      batch.set(doc(db,'containers',id), rest);
+    });
+    await batch.commit();
+  }
+}
+
+/* ================= Storage (attachments) ================= */
+async function uploadAttachment(containerId, file){
+  const aid = uid();
+  const path = `attachments/${containerId}/${aid}_${file.name}`;
+  const sref = ref(storageRef, path);
+  await uploadBytes(sref, file);
+  const url = await getDownloadURL(sref);
+  return {id:aid, name:file.name, size:file.size, type:file.type||'', url, path};
+}
+async function deleteAttachmentFile(path){
+  try{ await deleteObject(ref(storageRef, path)); }catch(e){ /* already gone is fine */ }
+}
+async function purgeAttachments(c){
+  for(const a of (c.attachments||[])) await deleteAttachmentFile(a.path);
 }
 
 /* ================= clipboard import ================= */
 function parseHtmlTable(html){
-  const doc = new DOMParser().parseFromString(html,'text/html');
-  return Array.from(doc.querySelectorAll('tr')).map(tr =>
+  const d = new DOMParser().parseFromString(html,'text/html');
+  return Array.from(d.querySelectorAll('tr')).map(tr =>
     Array.from(tr.querySelectorAll('td,th')).map(td =>
       td.textContent.replace(/\u00a0/g,' ').replace(/\s+/g,' ').trim()));
 }
@@ -441,6 +487,48 @@ function rowsToContainers(rows){
   })).filter(r => r.customer || r.container);
 }
 
+/* ================= one-time migration from the Claude-only prototype ================= */
+async function migrateFromClaude(){
+  if(!window.storage) return;
+  if(!confirm('This copies the container data saved earlier in this Claude conversation into the online database. Continue?')) return;
+  state.migrating = true; state.migrateMsg = 'Reading local data…'; render();
+  let old = [];
+  try{
+    const res = await window.storage.get('containers', true);
+    old = res && res.value ? JSON.parse(res.value) : [];
+  }catch(e){}
+  if(!old.length){
+    state.migrating = false; render();
+    alert('No local data found to migrate.');
+    return;
+  }
+  await bulkCreate(old.map(c => ({...c, attachments:[]})));
+  state.migrateMsg = `Saved ${old.length} containers. Migrating files…`; render();
+
+  let fileCount = 0;
+  for(const c of old){
+    const metas = [];
+    for(const a of (c.attachments||[])){
+      try{
+        const r = await window.storage.get(`attach:${c.id}:${a.id}`, true);
+        if(r && r.value){
+          const blob = await (await fetch(r.value)).blob();
+          const path = `attachments/${c.id}/${a.id}_${a.name}`;
+          const sref = ref(storageRef, path);
+          await uploadBytes(sref, blob);
+          const url = await getDownloadURL(sref);
+          metas.push({id:a.id, name:a.name, size:a.size, type:a.type||'', url, path});
+          fileCount++;
+          state.migrateMsg = `Migrating files… (${fileCount})`; render();
+        }
+      }catch(e){ /* skip file, keep going */ }
+    }
+    if(metas.length) await patchContainer(c.id, {attachments: metas});
+  }
+  state.migrating = false; render();
+  alert(`Migrated ${old.length} container(s) and ${fileCount} file(s).`);
+}
+
 /* ================= filtering ================= */
 function getFiltered(){
   let list = state.containers.slice();
@@ -460,9 +548,9 @@ function sortList(list){
   const {key,dir} = state.sort;
   return list.slice().sort((a,b)=>{
     if(key==='scheduled'){
-      const da=parseLooseDate(a.scheduled), db=parseLooseDate(b.scheduled);
-      if(!da&&!db) return 0; if(!da) return 1; if(!db) return -1;
-      return (da-db)*dir;
+      const da=parseLooseDate(a.scheduled), db2=parseLooseDate(b.scheduled);
+      if(!da&&!db2) return 0; if(!da) return 1; if(!db2) return -1;
+      return (da-db2)*dir;
     }
     if(key==='status') return (STATUS_META[a.status].order-STATUS_META[b.status].order)*dir;
     if(key==='cartons') return ((parseFloat(a.cartons)||0)-(parseFloat(b.cartons)||0))*dir;
@@ -482,6 +570,7 @@ function icon(n,s=17){
     cal:'<rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>',
     clip:'<path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>',
     file:'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>',
+    refresh:'<polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>',
   }[n]||'';
   return `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
 }
@@ -499,6 +588,7 @@ function headerHtml(){
     <div class="hdr-top">
       <div class="logo"><span class="mark">▦</span>MANIFEST</div>
       <div class="hdr-date">${ds.toUpperCase()}</div>
+      <span class="sync-dot ${state.syncError?'err':''}"><i></i>${state.syncError?'Offline':'Live'}</span>
       <div class="hdr-spacer"></div>
       <div class="hdr-stats">
         <div class="hstat"><div class="v">${active}</div><div class="l">Active</div></div>
@@ -510,16 +600,21 @@ function headerHtml(){
       ${[['schedule','Schedule'],['board','Board'],['table','Table'],['insights','Insights']].map(([k,l])=>
         `<button class="tab ${state.view===k?'on':''}" data-action="set-view" data-v="${k}">${l}</button>`).join('')}
     </div>
-  </div>`;
+  </div>
+  ${state.syncError ? `<div class="err-banner">Can't reach the database: ${esc(state.syncError)} — if you just created the Firebase project, make sure the Firestore &amp; Storage rules have been published.</div>` : ''}
+  ${state.migrating ? `<div class="err-banner" style="background:var(--teal-bg);color:var(--teal);border-color:var(--teal);">${esc(state.migrateMsg)}</div>` : ''}
+  `;
 }
 
 /* ================= controls ================= */
 function controlsHtml(){
+  const migrateBtn = (typeof window.storage !== 'undefined')
+    ? `<button class="btn btn-ghost" data-action="migrate">${icon('refresh',17)} Migrate old data</button>` : '';
   if(state.view==='insights'){
     return `<div class="controls">
       <span class="hint">Insights are computed from every container, ignoring filters.</span>
       <div class="spacer"></div>
-      ${actionBtns()}
+      ${migrateBtn}${actionBtns()}
     </div>`;
   }
   const c={active:0,pending:0,offloaded:0,delivered:0,completed:0};
@@ -547,7 +642,7 @@ function controlsHtml(){
       <option value="drop" ${state.typeFilter==='drop'?'selected':''}>Drop</option>
     </select>
     <div class="spacer"></div>
-    ${actionBtns()}
+    ${migrateBtn}${actionBtns()}
   </div>`;
 }
 function actionBtns(){
@@ -839,16 +934,16 @@ function attachHtml(c){
         <span style="color:var(--ink-soft)">${icon('file',18)}</span>
         <span class="nm">${esc(a.name)}</span>
         <span class="sz">${fmtSize(a.size)}</span>
-        <button class="icon-btn" data-action="att-open" data-id="${c.id}" data-v="${a.id}" title="Download">${icon('download',17)}</button>
+        <button class="icon-btn" data-action="att-open" data-id="${c.id}" data-v="${a.id}" title="Open / download">${icon('download',17)}</button>
         <button class="icon-btn" data-action="att-del" data-id="${c.id}" data-v="${a.id}" title="Remove">${icon('trash',17)}</button>
       </div>`).join('')}</div>`
     : '<div class="attach-empty">No packing list attached yet.</div>'}
     <label class="file-label">
       ${icon('upload',17)} ${state.uploading?'Uploading…':'Add file'}
-      <input type="file" id="attInput" multiple accept=".pdf,.xlsx,.xls,.csv,.png,.jpg,.jpeg,.doc,.docx">
+      <input type="file" id="attInput" multiple accept=".pdf,.xlsx,.xls,.csv,.png,.jpg,.jpeg,.doc,.docx" ${state.uploading?'disabled':''}>
     </label>
     ${state.uploadError?`<div style="color:var(--rose);font-size:14px;font-weight:700;margin-top:10px;">${esc(state.uploadError)}</div>`:''}
-    <div class="hint" style="margin-top:10px;">PDF, Excel, CSV or photo · up to 3.4 MB each · saved immediately</div>`;
+    <div class="hint" style="margin-top:10px;">PDF, Excel, CSV or photo · up to 15 MB each · visible to your whole team</div>`;
 }
 
 /* ================= import ================= */
@@ -873,7 +968,7 @@ function importHtml(){
       </div>
       <div class="modal-f">
         <span class="hint">Existing containers are kept — this adds new rows.</span>
-        <button class="btn btn-primary" data-action="run-import" ${n?'':'disabled style="opacity:.4;cursor:not-allowed;"'}>Import ${n||''}</button>
+        <button class="btn btn-primary" data-action="run-import" ${n?'':'disabled'}>Import ${n||''}</button>
       </div>
     </div>
   </div>`;
@@ -883,7 +978,7 @@ function importHtml(){
 function render(){
   const list = getFiltered();
   let body;
-  if(!state.loaded) body = '<div class="empty"><h3>Loading…</h3></div>';
+  if(!state.loaded) body = '<div class="empty"><h3>Connecting…</h3></div>';
   else if(state.view==='schedule') body = scheduleHtml(list);
   else if(state.view==='board') body = boardHtml(list);
   else if(state.view==='insights') body = insightsHtml();
@@ -914,55 +1009,45 @@ function wireInputs(){
   if(pd) pd.focus();
 }
 
-/* ================= attachments ================= */
+/* ================= attachments (UI side) ================= */
 async function handleFiles(files){
   if(!files || !files.length || !state.editingId) return;
-  const c = state.containers.find(x=>x.id===state.editingId);
-  if(!c) return;
+  const cid = state.editingId;
   state.uploadError=''; state.uploading=true; render();
+  const newMetas = [];
   for(const f of Array.from(files)){
     if(f.size > MAX_FILE){
-      state.uploadError = `"${f.name}" is ${fmtSize(f.size)} — the limit is 3.4 MB per file.`;
+      state.uploadError = `"${f.name}" is ${fmtSize(f.size)} — the limit is 15 MB per file.`;
       continue;
     }
     try{
-      const dataUrl = await new Promise((res,rej)=>{
-        const r = new FileReader();
-        r.onload = ()=>res(r.result);
-        r.onerror = ()=>rej(new Error('read failed'));
-        r.readAsDataURL(f);
-      });
-      const aid = uid();
-      await putAttachment(c.id, aid, dataUrl);
-      c.attachments = c.attachments || [];
-      c.attachments.push({id:aid, name:f.name, size:f.size, type:f.type||''});
+      const meta = await uploadAttachment(cid, f);
+      newMetas.push(meta);
     }catch(err){
-      state.uploadError = `Couldn't save "${f.name}". Try a smaller file.`;
+      state.uploadError = `Couldn't upload "${f.name}". Check your connection and try again.`;
     }
   }
+  if(newMetas.length){
+    const c = state.containers.find(x=>x.id===cid);
+    const merged = (c && c.attachments ? c.attachments.slice() : []).concat(newMetas);
+    await patchContainer(cid, {attachments: merged});
+  }
   state.uploading = false;
-  await saveData();
+  render();
 }
-async function openAttachment(cid, aid){
+function openAttachment(cid, aid){
   const c = state.containers.find(x=>x.id===cid);
-  const meta = c && (c.attachments||[]).find(a=>a.id===aid);
-  const data = await getAttachment(cid, aid);
-  if(!data){ alert("That file couldn't be loaded."); return; }
-  const a = document.createElement('a');
-  a.href = data;
-  a.download = meta ? meta.name : 'attachment';
-  document.body.appendChild(a); a.click(); a.remove();
+  const a = c && (c.attachments||[]).find(x=>x.id===aid);
+  if(a && a.url) window.open(a.url, '_blank');
 }
 async function removeAttachment(cid, aid){
   const c = state.containers.find(x=>x.id===cid);
   if(!c) return;
   if(!confirm('Remove this file?')) return;
-  await dropAttachment(cid, aid);
-  c.attachments = (c.attachments||[]).filter(a=>a.id!==aid);
-  saveData();
-}
-async function purgeAttachments(c){
-  for(const a of (c.attachments||[])) await dropAttachment(c.id, a.id);
+  const a = (c.attachments||[]).find(x=>x.id===aid);
+  if(a) await deleteAttachmentFile(a.path);
+  const remaining = (c.attachments||[]).filter(x=>x.id!==aid);
+  await patchContainer(cid, {attachments: remaining});
 }
 
 /* ================= events ================= */
@@ -998,34 +1083,30 @@ document.addEventListener('click', e => {
     if(inp) inp.value = `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
   }
   else if(act==='date-save'){
-    const c = state.containers.find(x=>x.id===state.datePop.id);
+    const targetId = state.datePop.id;
     const iso = (document.getElementById('popDate')||{}).value || '';
     const tm  = ((document.getElementById('popTime')||{}).value || '').trim();
-    if(c){
-      const base = fromISO(iso);
-      c.scheduled = base ? (tm ? `${base} ${tm}` : base) : '';
-    }
+    const base = fromISO(iso);
+    const scheduled = base ? (tm ? `${base} ${tm}` : base) : '';
     state.datePop = null;
-    saveData();
+    patchContainer(targetId, {scheduled});
   }
   else if(act==='date-clear'){
-    const c = state.containers.find(x=>x.id===state.datePop.id);
-    if(c) c.scheduled = '';
+    const targetId = state.datePop.id;
     state.datePop = null;
-    saveData();
+    patchContainer(targetId, {scheduled:''});
   }
   else if(act==='advance'){
     e.stopPropagation();
     const c = state.containers.find(x=>x.id===id);
-    if(c && NEXT_STATUS[c.status]){ c.status = NEXT_STATUS[c.status]; saveData(); }
+    if(c && NEXT_STATUS[c.status]) patchContainer(id, {status: NEXT_STATUS[c.status]});
   }
   else if(act==='del'){
     e.stopPropagation();
     if(confirm('Delete this container and its files? This cannot be undone.')){
       const c = state.containers.find(x=>x.id===id);
       if(c) purgeAttachments(c);
-      state.containers = state.containers.filter(x=>x.id!==id);
-      saveData();
+      removeContainer(id);
     }
   }
   else if(act==='att-open'){ e.stopPropagation(); openAttachment(id, v); }
@@ -1041,9 +1122,9 @@ document.addEventListener('click', e => {
     if(confirm('Delete this container and its files? This cannot be undone.')){
       const c = state.containers.find(x=>x.id===state.editingId);
       if(c) purgeAttachments(c);
-      state.containers = state.containers.filter(x=>x.id!==state.editingId);
+      removeContainer(state.editingId);
       state.showForm=false; state.editingId=null;
-      saveData();
+      render();
     }
   }
   else if(act==='import'){ state.showImport=true; state.importRows=[]; render(); }
@@ -1051,11 +1132,12 @@ document.addEventListener('click', e => {
   else if(act==='clear-paste'){ e.preventDefault(); state.importRows=[]; render(); }
   else if(act==='run-import'){
     if(!state.importRows.length) return;
-    state.containers = state.containers.concat(rowsToContainers(state.importRows));
+    bulkCreate(rowsToContainers(state.importRows));
     state.showImport=false; state.importRows=[];
-    saveData();
+    render();
   }
   else if(act==='export'){ exportCsv(); }
+  else if(act==='migrate'){ migrateFromClaude(); }
 });
 document.addEventListener('keydown', e => {
   if(e.key!=='Escape') return;
@@ -1067,7 +1149,7 @@ document.addEventListener('keydown', e => {
 function closeForm(){ state.showForm=false; state.editingId=null; state.uploadError=''; render(); }
 function closeImport(){ state.showImport=false; state.importRows=[]; render(); }
 
-function saveForm(){
+async function saveForm(){
   const g = id => (document.getElementById(id)||{}).value || '';
   const base = fromISO(g('f_date'));
   const tm = g('f_time').trim();
@@ -1085,16 +1167,14 @@ function saveForm(){
   };
   if(!data.customer || !data.container){ alert('Customer and container # are required.'); return; }
   if(state.editingId){
-    const i = state.containers.findIndex(c=>c.id===state.editingId);
-    if(i>-1) state.containers[i] = {...state.containers[i], ...data};
+    await patchContainer(state.editingId, data);
     state.showForm=false; state.editingId=null;
+    render();
   }else{
-    const nc = {id:uid(), ...data, attachments:[]};
-    state.containers.push(nc);
-    // keep the panel open on the new record so files can be attached right away
-    state.editingId = nc.id;
+    const newId = await createContainer(data);
+    state.editingId = newId;
+    render();
   }
-  saveData();
 }
 
 function exportCsv(){
@@ -1111,7 +1191,8 @@ function exportCsv(){
   URL.revokeObjectURL(a.href);
 }
 
-loadData();
+render();
+startSync();
 </script>
 </body>
 </html>
