@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Manifest — Inbound Operations</title>
+<title>Manifest — Inbound &amp; Outbound Operations</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap');
 
@@ -68,8 +68,17 @@ a{color:inherit;}
 .hstat .v{font-size:29px;font-weight:800;line-height:1;}
 .hstat .l{font-size:11.5px;text-transform:uppercase;letter-spacing:.09em;color:#9fb6c9;margin-top:5px;font-weight:600;}
 .hstat.warn .v{color:#ff9c9c;}
+
+.mode-row{display:flex;align-items:center;gap:14px;padding:0 0 12px;flex-wrap:wrap;}
+.mode-switch{display:flex;background:rgba(255,255,255,.08);border-radius:11px;padding:4px;gap:2px;}
+.mode-switch button{
+  border:none;background:none;color:#a6bcd0;font-size:15px;font-weight:800;padding:9px 18px;
+  border-radius:8px;cursor:pointer;letter-spacing:.02em;
+}
+.mode-switch button.on{background:var(--signal);color:var(--navy);}
+.mode-div{width:1.5px;align-self:stretch;background:rgba(255,255,255,.15);}
 .tabs{display:flex;gap:3px;}
-.tab{background:none;border:none;color:#a6bcd0;font-size:16px;font-weight:700;padding:13px 18px;cursor:pointer;border-bottom:3px solid transparent;}
+.tab{background:none;border:none;color:#a6bcd0;font-size:15.5px;font-weight:700;padding:11px 16px;cursor:pointer;border-bottom:3px solid transparent;}
 .tab:hover{color:#fff;}
 .tab.on{color:#fff;border-bottom-color:var(--signal);}
 
@@ -104,8 +113,8 @@ select{cursor:pointer;}
 
 /* ============ Shared ============ */
 .type-pill{font-size:12.5px;font-weight:800;padding:4px 11px;border-radius:20px;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap;}
-.type-live{background:var(--rust-bg);color:var(--rust);}
-.type-drop{background:#dce7f1;color:var(--navy-soft);}
+.type-a{background:var(--rust-bg);color:var(--rust);}
+.type-b{background:#dce7f1;color:var(--navy-soft);}
 .status-flag{font-size:13px;font-weight:800;padding:5px 12px;border-radius:7px;text-transform:uppercase;letter-spacing:.05em;white-space:nowrap;}
 .overdue-tag{font-size:12px;font-weight:800;color:#fff;background:var(--rose);padding:4px 10px;border-radius:6px;text-transform:uppercase;letter-spacing:.05em;}
 .adv-btn{
@@ -233,9 +242,9 @@ table.grid{width:100%;border-collapse:collapse;background:var(--card);border-rad
 .row2{display:flex;gap:12px;}
 .row2 .field{flex:1;}
 .seg{display:flex;border:1.5px solid var(--line-2);border-radius:9px;overflow:hidden;}
-.seg button{flex:1;border:none;background:#fff;padding:11px 0;font-size:15px;font-weight:700;cursor:pointer;color:var(--ink-soft);}
-.seg button.on-live{background:var(--rust-bg);color:var(--rust);}
-.seg button.on-drop{background:#dce7f1;color:var(--navy-soft);}
+.seg button{flex:1;border:none;background:#fff;padding:11px 6px;font-size:14.5px;font-weight:700;cursor:pointer;color:var(--ink-soft);}
+.seg button.on-a{background:var(--rust-bg);color:var(--rust);}
+.seg button.on-b{background:#dce7f1;color:var(--navy-soft);}
 
 .attach-box{border:1.5px solid var(--line);border-radius:11px;padding:15px;background:#fbfaf7;}
 .attach-list{display:flex;flex-direction:column;gap:9px;margin-bottom:12px;}
@@ -248,7 +257,18 @@ table.grid{width:100%;border-collapse:collapse;background:var(--card);border-rad
   padding:11px 16px;font-size:15px;font-weight:700;cursor:pointer;color:var(--navy);background:#fff;
 }
 .file-label:hover{background:var(--gray-bg);}
+.file-label.cam{border-style:solid;border-color:var(--teal);color:var(--teal);background:var(--teal-bg);}
+.file-label.cam:hover{filter:brightness(.96);background:var(--teal-bg);}
 .file-label input{display:none;}
+.attach-actions{display:flex;gap:9px;flex-wrap:wrap;}
+.attach-sublabel{font-size:11.5px;font-weight:800;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.06em;margin:2px 0 9px;}
+.photo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:9px;margin-bottom:14px;}
+.photo-thumb{position:relative;aspect-ratio:1;border-radius:10px;overflow:hidden;border:1.5px solid var(--line);cursor:pointer;background:var(--gray-bg);}
+.photo-thumb img{width:100%;height:100%;object-fit:cover;display:block;}
+.photo-thumb .rm{position:absolute;top:4px;right:4px;background:rgba(16,22,31,.72);color:#fff;border:none;border-radius:6px;width:24px;height:24px;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;}
+.photo-thumb .rm:hover{background:var(--rose);}
+.photo-thumb .dl{position:absolute;bottom:0;left:0;right:0;background:rgba(16,22,31,.62);color:#fff;font-size:10.5px;font-weight:700;padding:3px 6px;text-align:center;opacity:0;transition:opacity .12s;}
+.photo-thumb:hover .dl{opacity:1;}
 
 /* ============ Import modal ============ */
 .modal-ov{position:fixed;inset:0;background:rgba(14,22,32,.5);display:flex;align-items:center;justify-content:center;z-index:60;padding:16px;}
@@ -306,40 +326,101 @@ const firebaseConfig = {
 const fbApp = initializeApp(firebaseConfig);
 const db = getFirestore(fbApp);
 const storageRef = getStorage(fbApp);
-const containersCol = collection(db, 'containers');
 
-/* ================= constants ================= */
-const STATUS_META = {
-  pending:  {label:'Pending',   color:'var(--rose)', bg:'var(--rose-bg)', order:0},
-  offloaded:{label:'Offloaded', color:'var(--rust)', bg:'var(--rust-bg)', order:1},
-  delivered:{label:'Delivered', color:'var(--teal)', bg:'var(--teal-bg)', order:2},
-  completed:{label:'Completed', color:'var(--moss)', bg:'var(--moss-bg)', order:3},
+/* ================= entity config =================
+   Everything that differs between Inbound and Outbound lives here.
+   Inbound's field names (customer, container, size, scheduled, cartons,
+   type, skus, note, status, forwarder) are unchanged from the original
+   version, so existing Firestore data and the Google Sheet import both
+   keep working exactly as before. Outbound is a brand-new collection
+   with its own field names, entered directly in the app. */
+const ENTITIES = {
+  inbound: {
+    label:'Inbound', plural:'containers', collection:'containers',
+    numberField:'container', numberLabel:'Container #', numberPlaceholder:'e.g. BSIU9959987',
+    dateField:'scheduled', dateLabel:'Delivery date',
+    methodField:'type', methodLabel:'Unload type',
+    methodOptions:[['live','Live unload'],['drop','Drop']],
+    extraField:'size', extraLabel:'Size', extraOptions:["20'","40'","40'HQ","45'HC","Other"],
+    tagField:'forwarder', tagLabel:'Tag (freight forwarder, etc.)', tagPlaceholder:'e.g. starling freight',
+    attachLabel:'packing list',
+    statusMeta:{
+      pending:  {label:'Pending',   color:'var(--rose)', bg:'var(--rose-bg)', order:0},
+      offloaded:{label:'Offloaded', color:'var(--rust)', bg:'var(--rust-bg)', order:1},
+      delivered:{label:'Delivered', color:'var(--teal)', bg:'var(--teal-bg)', order:2},
+      completed:{label:'Completed', color:'var(--moss)', bg:'var(--moss-bg)', order:3},
+    },
+    statusOrder:['pending','offloaded','delivered','completed'],
+    nextStatus:{pending:'offloaded', offloaded:'delivered', delivered:'completed'},
+    finalStatus:'completed',
+    lateStatuses:['pending','offloaded'],
+    csvHead:'Customer,Container,Size,Delivery scheduled,Cartons/Pallet,Live or drop,SKUs,Note,Status,Tag,Files',
+    csvFile:'manifest-inbound.csv',
+    showImport:true,
+  },
+  outbound: {
+    label:'Outbound', plural:'shipments', collection:'outbound',
+    numberField:'reference', numberLabel:'Order / PO #', numberPlaceholder:'e.g. PO-48213',
+    dateField:'shipDate', dateLabel:'Ship date',
+    methodField:'method', methodLabel:'Method',
+    methodOptions:[['pickup','Carrier pickup'],['delivery','Company delivery']],
+    extraField:'carrier', extraLabel:'Carrier', extraPlaceholder:'e.g. Old Dominion, will call',
+    tagField:'tag', tagLabel:'Tag / BOL #', tagPlaceholder:'e.g. BOL-2291',
+    attachLabel:'shipping docs',
+    statusMeta:{
+      scheduled:{label:'Scheduled', color:'var(--rose)', bg:'var(--rose-bg)', order:0},
+      staged:   {label:'Staged',    color:'var(--rust)', bg:'var(--rust-bg)', order:1},
+      loaded:   {label:'Loaded',    color:'var(--teal)', bg:'var(--teal-bg)', order:2},
+      shipped:  {label:'Shipped',   color:'var(--moss)', bg:'var(--moss-bg)', order:3},
+    },
+    statusOrder:['scheduled','staged','loaded','shipped'],
+    nextStatus:{scheduled:'staged', staged:'loaded', loaded:'shipped'},
+    finalStatus:'shipped',
+    lateStatuses:['scheduled','staged','loaded'],
+    csvHead:'Customer,Order/PO,Carrier,Ship date,Cartons/Pallet,Method,SKUs,Note,Status,Tag,Files',
+    csvFile:'manifest-outbound.csv',
+    showImport:false,
+  },
 };
-const STATUS_ORDER = ['pending','offloaded','delivered','completed'];
-const NEXT_STATUS = {pending:'offloaded', offloaded:'delivered', delivered:'completed'};
+function cfg(){ return ENTITIES[state.mode]; }
 const MAX_FILE = 15 * 1024 * 1024;
 
 /* ================= state ================= */
 let state = {
-  containers: [],
+  mode:'inbound',
+  inbound: [], outbound: [],
   view:'schedule',
   search:'',
   statusFilter:'active',
-  typeFilter:'all',
-  sort:{key:'scheduled', dir:1},
+  methodFilter:'all',
+  sort:{key:'date', dir:1},
   showForm:false,
   editingId:null,
-  formType:'live',
+  formMethod:null,
   showImport:false,
   importRows:[],
   datePop:null,
   uploading:false,
   uploadError:'',
-  loaded:false,
+  loadedInbound:false,
+  loadedOutbound:false,
   syncError:'',
   migrating:false,
   migrateMsg:'',
 };
+function list(){ return state[state.mode]; }
+function loaded(){ return state.mode==='inbound' ? state.loadedInbound : state.loadedOutbound; }
+
+/* ================= record accessors (mode-aware) ================= */
+function numOf(r){ return r[cfg().numberField]; }
+function dateOf(r){ return r[cfg().dateField]; }
+function methodOf(r){ return r[cfg().methodField]; }
+function extraOf(r){ return r[cfg().extraField]; }
+function tagOf(r){ return r[cfg().tagField]; }
+function methodLabelFor(val){
+  const o = cfg().methodOptions.find(o=>o[0]===val);
+  return o ? o[1] : val;
+}
 
 /* ================= helpers ================= */
 function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
@@ -372,11 +453,11 @@ function fromISO(iso){
   return `${+m[2]}/${+m[3]}/${+m[1]}`;
 }
 function today0(){ const d=new Date(); d.setHours(0,0,0,0); return d; }
-function isOverdue(c){
-  const d = parseLooseDate(c.scheduled);
-  return !!d && d < today0() && (c.status==='pending' || c.status==='offloaded');
+function isOverdue(r){
+  const d = parseLooseDate(dateOf(r));
+  return !!d && d < today0() && cfg().lateStatuses.includes(r.status);
 }
-function isActive(c){ return c.status!=='completed'; }
+function isActive(r){ return r.status !== cfg().finalStatus; }
 function dayLabel(d){
   const diff = Math.round((d - today0())/86400000);
   const w = d.toLocaleDateString('en-US',{weekday:'long'});
@@ -385,64 +466,59 @@ function dayLabel(d){
   if(diff===0) extra=' · Today'; else if(diff===1) extra=' · Tomorrow';
   return {title:`${w}, ${md}${extra}`, isToday:diff===0};
 }
-function normalizeStatus(s){
+function normalizeStatus(s, order){
   s=(s||'').toLowerCase();
-  if(s.includes('complet')) return 'completed';
-  if(s.includes('deliver')) return 'delivered';
-  if(s.includes('offload')) return 'offloaded';
-  return 'pending';
+  for(const key of order) if(s.includes(key.slice(0,4))) return key;
+  return order[0];
 }
-function normalizeType(s){ return (s||'').toLowerCase().includes('drop') ? 'drop' : 'live'; }
 function fmtSize(b){
   if(b<1024) return b+' B';
   if(b<1048576) return (b/1024).toFixed(0)+' KB';
   return (b/1048576).toFixed(1)+' MB';
 }
-function attCount(c){ return (c.attachments||[]).length; }
+function attCount(r){ return (r.attachments||[]).length; }
 
-/* ================= Firestore sync ================= */
-let unsub = null;
+/* ================= Firestore sync =================
+   Both collections are always listened to (not just the active mode's),
+   so switching the Inbound/Outbound pill is instant with no reload. */
 function startSync(){
-  unsub = onSnapshot(containersCol, snap => {
-    const rows = [];
-    snap.forEach(d => rows.push({ ...d.data(), id: d.id }));
-    state.containers = rows;
-    state.loaded = true;
-    state.syncError = '';
+  onSnapshot(collection(db,'containers'), snap => {
+    const rows = []; snap.forEach(d => rows.push({...d.data(), id:d.id}));
+    state.inbound = rows; state.loadedInbound = true; state.syncError = '';
     if(!state.showForm && !state.showImport && !state.datePop) render();
-  }, err => {
-    state.loaded = true;
-    state.syncError = err.message || 'Could not connect to the database.';
-    render();
-  });
+  }, err => { state.loadedInbound = true; state.syncError = err.message || 'Could not connect to the database.'; render(); });
+
+  onSnapshot(collection(db,'outbound'), snap => {
+    const rows = []; snap.forEach(d => rows.push({...d.data(), id:d.id}));
+    state.outbound = rows; state.loadedOutbound = true; state.syncError = '';
+    if(!state.showForm && !state.showImport && !state.datePop) render();
+  }, err => { state.loadedOutbound = true; state.syncError = err.message || 'Could not connect to the database.'; render(); });
 }
-async function createContainer(data){
+async function createRecord(mode, data){
   const id = uid();
-  await setDoc(doc(db,'containers',id), {...data, attachments:[]});
+  await setDoc(doc(db, ENTITIES[mode].collection, id), {...data, attachments:[]});
   return id;
 }
-async function patchContainer(id, patch){
-  await updateDoc(doc(db,'containers',id), patch);
+async function patchRecord(mode, id, patch){
+  await updateDoc(doc(db, ENTITIES[mode].collection, id), patch);
 }
-async function removeContainer(id){
-  await deleteDoc(doc(db,'containers',id));
+async function removeRecord(mode, id){
+  await deleteDoc(doc(db, ENTITIES[mode].collection, id));
 }
-async function bulkCreate(list){
-  for(let i=0;i<list.length;i+=400){
-    const chunk = list.slice(i,i+400);
+async function bulkCreate(mode, records){
+  const c = ENTITIES[mode].collection;
+  for(let i=0;i<records.length;i+=400){
+    const chunk = records.slice(i,i+400);
     const batch = writeBatch(db);
-    chunk.forEach(c=>{
-      const {id, ...rest} = c;
-      batch.set(doc(db,'containers',id), rest);
-    });
+    chunk.forEach(r=>{ const {id, ...rest} = r; batch.set(doc(db,c,id), rest); });
     await batch.commit();
   }
 }
 
 /* ================= Storage (attachments) ================= */
-async function uploadAttachment(containerId, file){
+async function uploadAttachment(mode, recordId, file){
   const aid = uid();
-  const path = `attachments/${containerId}/${aid}_${file.name}`;
+  const path = `attachments/${mode}/${recordId}/${aid}_${file.name}`;
   const sref = ref(storageRef, path);
   await uploadBytes(sref, file);
   const url = await getDownloadURL(sref);
@@ -451,11 +527,11 @@ async function uploadAttachment(containerId, file){
 async function deleteAttachmentFile(path){
   try{ await deleteObject(ref(storageRef, path)); }catch(e){ /* already gone is fine */ }
 }
-async function purgeAttachments(c){
-  for(const a of (c.attachments||[])) await deleteAttachmentFile(a.path);
+async function purgeAttachments(r){
+  for(const a of (r.attachments||[])) await deleteAttachmentFile(a.path);
 }
 
-/* ================= clipboard import ================= */
+/* ================= clipboard import (Inbound only) ================= */
 function parseHtmlTable(html){
   const d = new DOMParser().parseFromString(html,'text/html');
   return Array.from(d.querySelectorAll('tr')).map(tr =>
@@ -478,16 +554,16 @@ function rowsToContainers(rows){
     size:(cols[2]||"40'HQ").trim(),
     scheduled:(cols[3]||'').trim(),
     cartons:(cols[4]||'').trim(),
-    type:normalizeType(cols[5]),
+    type:(cols[5]||'').toLowerCase().includes('drop') ? 'drop' : 'live',
     skus:(cols[6]||'').trim(),
     note:(cols[7]||'').trim(),
-    status:normalizeStatus(cols[8]),
+    status:normalizeStatus(cols[8], ENTITIES.inbound.statusOrder),
     forwarder:(cols[9]||'').trim(),
     attachments:[],
   })).filter(r => r.customer || r.container);
 }
 
-/* ================= one-time migration from the Claude-only prototype ================= */
+/* ================= one-time migration from the Claude-only prototype (Inbound only) ================= */
 async function migrateFromClaude(){
   if(!window.storage) return;
   if(!confirm('This copies the container data saved earlier in this Claude conversation into the online database. Continue?')) return;
@@ -502,7 +578,7 @@ async function migrateFromClaude(){
     alert('No local data found to migrate.');
     return;
   }
-  await bulkCreate(old.map(c => ({...c, attachments:[]})));
+  await bulkCreate('inbound', old.map(c => ({...c, attachments:[]})));
   state.migrateMsg = `Saved ${old.length} containers. Migrating files…`; render();
 
   let fileCount = 0;
@@ -513,7 +589,7 @@ async function migrateFromClaude(){
         const r = await window.storage.get(`attach:${c.id}:${a.id}`, true);
         if(r && r.value){
           const blob = await (await fetch(r.value)).blob();
-          const path = `attachments/${c.id}/${a.id}_${a.name}`;
+          const path = `attachments/inbound/${c.id}/${a.id}_${a.name}`;
           const sref = ref(storageRef, path);
           await uploadBytes(sref, blob);
           const url = await getDownloadURL(sref);
@@ -521,9 +597,9 @@ async function migrateFromClaude(){
           fileCount++;
           state.migrateMsg = `Migrating files… (${fileCount})`; render();
         }
-      }catch(e){ /* skip file, keep going */ }
+      }catch(e){}
     }
-    if(metas.length) await patchContainer(c.id, {attachments: metas});
+    if(metas.length) await patchRecord('inbound', c.id, {attachments: metas});
   }
   state.migrating = false; render();
   alert(`Migrated ${old.length} container(s) and ${fileCount} file(s).`);
@@ -531,29 +607,31 @@ async function migrateFromClaude(){
 
 /* ================= filtering ================= */
 function getFiltered(){
-  let list = state.containers.slice();
-  if(state.statusFilter==='active') list = list.filter(isActive);
-  else if(state.statusFilter!=='all') list = list.filter(c=>c.status===state.statusFilter);
-  if(state.typeFilter!=='all') list = list.filter(c=>c.type===state.typeFilter);
+  let l = list().slice();
+  if(state.statusFilter==='active') l = l.filter(isActive);
+  else if(state.statusFilter!=='all') l = l.filter(r=>r.status===state.statusFilter);
+  if(state.methodFilter!=='all') l = l.filter(r=>methodOf(r)===state.methodFilter);
   const q = state.search.trim().toLowerCase();
-  if(q) list = list.filter(c =>
-    (c.customer||'').toLowerCase().includes(q) ||
-    (c.container||'').toLowerCase().includes(q) ||
-    (c.note||'').toLowerCase().includes(q) ||
-    (c.forwarder||'').toLowerCase().includes(q) ||
-    (c.skus||'').toLowerCase().includes(q));
-  return list;
+  if(q) l = l.filter(r =>
+    (r.customer||'').toLowerCase().includes(q) ||
+    (numOf(r)||'').toLowerCase().includes(q) ||
+    (r.note||'').toLowerCase().includes(q) ||
+    (tagOf(r)||'').toLowerCase().includes(q) ||
+    (r.skus||'').toLowerCase().includes(q));
+  return l;
 }
-function sortList(list){
+function sortList(l){
   const {key,dir} = state.sort;
-  return list.slice().sort((a,b)=>{
-    if(key==='scheduled'){
-      const da=parseLooseDate(a.scheduled), db2=parseLooseDate(b.scheduled);
+  const c = cfg();
+  return l.slice().sort((a,b)=>{
+    if(key==='date'){
+      const da=parseLooseDate(dateOf(a)), db2=parseLooseDate(dateOf(b));
       if(!da&&!db2) return 0; if(!da) return 1; if(!db2) return -1;
       return (da-db2)*dir;
     }
-    if(key==='status') return (STATUS_META[a.status].order-STATUS_META[b.status].order)*dir;
+    if(key==='status') return (c.statusMeta[a.status].order - c.statusMeta[b.status].order)*dir;
     if(key==='cartons') return ((parseFloat(a.cartons)||0)-(parseFloat(b.cartons)||0))*dir;
+    if(key==='number') return String(numOf(a)||'').localeCompare(String(numOf(b)||''))*dir;
     return String(a[key]||'').localeCompare(String(b[key]||''))*dir;
   });
 }
@@ -571,17 +649,19 @@ function icon(n,s=17){
     clip:'<path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>',
     file:'<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>',
     refresh:'<polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>',
+    camera:'<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>',
+    image:'<rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>',
   }[n]||'';
   return `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
 }
 
 /* ================= header ================= */
 function headerHtml(){
-  const all = state.containers;
-  const active = all.filter(isActive).length;
-  const overdue = all.filter(isOverdue).length;
+  const l = list();
+  const active = l.filter(isActive).length;
+  const overdue = l.filter(isOverdue).length;
   const t = today0(), wk = new Date(t); wk.setDate(wk.getDate()+7);
-  const soon = all.filter(c=>{const d=parseLooseDate(c.scheduled);return d&&d>=t&&d<wk&&isActive(c);}).length;
+  const soon = l.filter(r=>{const d=parseLooseDate(dateOf(r));return d&&d>=t&&d<wk&&isActive(r);}).length;
   const ds = new Date().toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',year:'numeric'});
   return `
   <div class="hdr">
@@ -596,9 +676,16 @@ function headerHtml(){
         <div class="hstat ${overdue?'warn':''}"><div class="v">${overdue}</div><div class="l">Overdue</div></div>
       </div>
     </div>
-    <div class="tabs">
-      ${[['schedule','Schedule'],['board','Board'],['table','Table'],['insights','Insights']].map(([k,l])=>
-        `<button class="tab ${state.view===k?'on':''}" data-action="set-view" data-v="${k}">${l}</button>`).join('')}
+    <div class="mode-row">
+      <div class="mode-switch">
+        <button class="${state.mode==='inbound'?'on':''}" data-action="set-mode" data-v="inbound">Inbound</button>
+        <button class="${state.mode==='outbound'?'on':''}" data-action="set-mode" data-v="outbound">Outbound</button>
+      </div>
+      <div class="mode-div"></div>
+      <div class="tabs">
+        ${[['schedule','Schedule'],['board','Board'],['table','Table'],['insights','Insights']].map(([k,lb])=>
+          `<button class="tab ${state.view===k?'on':''}" data-action="set-view" data-v="${k}">${lb}</button>`).join('')}
+      </div>
     </div>
   </div>
   ${state.syncError ? `<div class="err-banner">Can't reach the database: ${esc(state.syncError)} — if you just created the Firebase project, make sure the Firestore &amp; Storage rules have been published.</div>` : ''}
@@ -608,77 +695,84 @@ function headerHtml(){
 
 /* ================= controls ================= */
 function controlsHtml(){
-  const migrateBtn = (typeof window.storage !== 'undefined')
+  const c = cfg();
+  const migrateBtn = (state.mode==='inbound' && typeof window.storage !== 'undefined')
     ? `<button class="btn btn-ghost" data-action="migrate">${icon('refresh',17)} Migrate old data</button>` : '';
+  const importBtn = c.showImport
+    ? `<button class="btn btn-ghost" data-action="import">${icon('upload',17)} Import</button>` : '';
   if(state.view==='insights'){
     return `<div class="controls">
-      <span class="hint">Insights are computed from every container, ignoring filters.</span>
+      <span class="hint">Insights are computed from every ${c.plural.replace(/s$/,'')} record, ignoring filters.</span>
       <div class="spacer"></div>
-      ${migrateBtn}${actionBtns()}
+      ${migrateBtn}${importBtn}
+      <button class="btn btn-ghost" data-action="export">${icon('download',17)} Export</button>
+      <button class="btn btn-primary" data-action="new">${icon('plus',17)} New ${c.plural.replace(/s$/,'')}</button>
     </div>`;
   }
-  const c={active:0,pending:0,offloaded:0,delivered:0,completed:0};
-  state.containers.forEach(x=>{ c[x.status]++; if(isActive(x)) c.active++; });
-  const chips=[
-    ['active','Active',null,c.active],
-    ['pending','Pending',STATUS_META.pending.color,c.pending],
-    ['offloaded','Offloaded',STATUS_META.offloaded.color,c.offloaded],
-    ['delivered','Delivered',STATUS_META.delivered.color,c.delivered],
-    ['completed','Completed',STATUS_META.completed.color,c.completed],
-    ['all','All',null,state.containers.length],
-  ];
+  const counts = {active:0};
+  c.statusOrder.forEach(s=>counts[s]=0);
+  list().forEach(r=>{ counts[r.status] = (counts[r.status]||0)+1; if(isActive(r)) counts.active++; });
+  const chips=[['active','Active',null,counts.active]]
+    .concat(c.statusOrder.map(s=>[s, c.statusMeta[s].label, c.statusMeta[s].color, counts[s]||0]))
+    .concat([['all','All',null,list().length]]);
   return `
   <div class="controls">
     <div class="search-wrap">${icon('search',18)}
-      <input type="text" id="searchInput" placeholder="Search customer, container, note, tag…" value="${esc(state.search)}">
+      <input type="text" id="searchInput" placeholder="Search customer, ${c.numberLabel.toLowerCase()}, note, tag…" value="${esc(state.search)}">
     </div>
     ${chips.map(([k,l,col,n])=>`
       <span class="chip ${state.statusFilter===k?'on':''}" data-action="set-status" data-v="${k}">
         ${col?`<span class="dot" style="background:${col}"></span>`:''}${l} <span class="n">${n}</span>
       </span>`).join('')}
-    <select id="typeSelect">
-      <option value="all" ${state.typeFilter==='all'?'selected':''}>Live + Drop</option>
-      <option value="live" ${state.typeFilter==='live'?'selected':''}>Live unload</option>
-      <option value="drop" ${state.typeFilter==='drop'?'selected':''}>Drop</option>
+    <select id="methodSelect">
+      <option value="all" ${state.methodFilter==='all'?'selected':''}>${c.methodOptions[0][1]} + ${c.methodOptions[1][1]}</option>
+      ${c.methodOptions.map(([v,l])=>`<option value="${v}" ${state.methodFilter===v?'selected':''}>${l}</option>`).join('')}
     </select>
     <div class="spacer"></div>
-    ${migrateBtn}${actionBtns()}
-  </div>`;
-}
-function actionBtns(){
-  return `
+    ${migrateBtn}${importBtn}
     <button class="btn btn-ghost" data-action="export">${icon('download',17)} Export</button>
-    <button class="btn btn-ghost" data-action="import">${icon('upload',17)} Import</button>
-    <button class="btn btn-primary" data-action="new">${icon('plus',17)} New container</button>`;
+    <button class="btn btn-primary" data-action="new">${icon('plus',17)} New ${c.plural.replace(/s$/,'')}</button>
+  </div>`;
 }
 
 /* ================= reusable cells ================= */
-function dateCellHtml(c){
-  const d = parseLooseDate(c.scheduled);
-  const t = timePart(c.scheduled);
+function dateCellHtml(r){
+  const c = cfg();
+  const d = parseLooseDate(dateOf(r));
+  const t = timePart(dateOf(r));
   const label = d
     ? d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) + (t?` · ${t}`:'')
     : 'Set date';
-  return `<span class="date-cell ${d?'':'unset'}" data-action="open-date" data-id="${c.id}" title="Click to change the delivery date">
+  return `<span class="date-cell ${d?'':'unset'}" data-action="open-date" data-id="${r.id}" title="Click to change the ${c.dateLabel.toLowerCase()}">
     <span class="cal">${icon('cal',16)}</span>${esc(label)}
   </span>`;
 }
-function clipHtml(c){
-  const n = attCount(c);
-  if(!n) return '';
-  return `<span class="clip" data-action="edit" data-id="${c.id}">${icon('clip',14)} ${n}</span>`;
+function clipHtml(r){
+  const all = r.attachments||[];
+  if(!all.length) return '';
+  const photos = all.filter(isPhoto).length;
+  const docs = all.length - photos;
+  let out = '';
+  if(photos) out += `<span class="clip" data-action="edit" data-id="${r.id}" title="${photos} proof photo${photos===1?'':'s'}">${icon('camera',14)} ${photos}</span>`;
+  if(docs) out += `<span class="clip" data-action="edit" data-id="${r.id}" title="${docs} document${docs===1?'':'s'}">${icon('clip',14)} ${docs}</span>`;
+  return out;
+}
+function methodPillHtml(r){
+  const c = cfg();
+  const isFirst = methodOf(r) === c.methodOptions[0][0];
+  return `<span class="type-pill ${isFirst?'type-a':'type-b'}">${esc(methodLabelFor(methodOf(r)))}</span>`;
 }
 
 /* ================= schedule ================= */
-function scheduleHtml(list){
-  if(!list.length) return emptyHtml();
-  const late = list.filter(isOverdue);
-  const rest = list.filter(c=>!isOverdue(c));
+function scheduleHtml(l){
+  if(!l.length) return emptyHtml();
+  const late = l.filter(isOverdue);
+  const rest = l.filter(r=>!isOverdue(r));
   const dated={}, undated=[];
-  rest.forEach(c=>{
-    const d = parseLooseDate(c.scheduled);
-    if(!d){ undated.push(c); return; }
-    (dated[d.getTime()] = dated[d.getTime()]||[]).push(c);
+  rest.forEach(r=>{
+    const d = parseLooseDate(dateOf(r));
+    if(!d){ undated.push(r); return; }
+    (dated[d.getTime()] = dated[d.getTime()]||[]).push(r);
   });
   let out='';
   if(late.length) out += dayGroup('Overdue', late, 'danger');
@@ -694,97 +788,101 @@ function dayGroup(title, rows, cls){
   <div class="day-group ${cls}">
     <div class="day-head ${cls==='danger'?'danger':''}">
       <span class="day-title">${title}</span>
-      <span class="day-count">${rows.length} container${rows.length===1?'':'s'}</span>
+      <span class="day-count">${rows.length} ${rows.length===1?cfg().plural.replace(/s$/,''):cfg().plural}</span>
     </div>
     <div class="sched-list">${rows.map(schedRow).join('')}</div>
   </div>`;
 }
-function schedRow(c){
-  const nxt = NEXT_STATUS[c.status], meta = STATUS_META[c.status];
+function schedRow(r){
+  const c = cfg();
+  const nxt = c.nextStatus[r.status], meta = c.statusMeta[r.status];
   return `
-  <div class="sched-row ${c.status==='completed'?'done':''}" data-action="edit" data-id="${c.id}">
-    ${dateCellHtml(c)}
-    <span class="sched-cust">${esc(c.customer)}</span>
+  <div class="sched-row ${r.status===c.finalStatus?'done':''}" data-action="edit" data-id="${r.id}">
+    ${dateCellHtml(r)}
+    <span class="sched-cust">${esc(r.customer)}</span>
     <span class="sched-meta">
-      <span class="cnum">${esc(c.container)}</span>
-      <span class="size-tag">${esc(c.size)}</span>
-      <span class="type-pill ${c.type==='drop'?'type-drop':'type-live'}">${c.type==='drop'?'Drop':'Live'}</span>
-      ${c.cartons?`<span class="note-txt">${esc(c.cartons)} ctns</span>`:''}
-      ${clipHtml(c)}
-      ${isOverdue(c)?'<span class="overdue-tag">Overdue</span>':''}
+      <span class="cnum">${esc(numOf(r))}</span>
+      ${extraOf(r)?`<span class="size-tag">${esc(extraOf(r))}</span>`:''}
+      ${methodPillHtml(r)}
+      ${r.cartons?`<span class="note-txt">${esc(r.cartons)} ctns</span>`:''}
+      ${clipHtml(r)}
+      ${isOverdue(r)?'<span class="overdue-tag">Overdue</span>':''}
     </span>
-    <span class="grow note-txt">${esc(c.note)}</span>
-    ${c.forwarder?`<span class="fwd-txt">${esc(c.forwarder)}</span>`:''}
+    <span class="grow note-txt">${esc(r.note)}</span>
+    ${tagOf(r)?`<span class="fwd-txt">${esc(tagOf(r))}</span>`:''}
     <span class="status-flag" style="color:${meta.color};background:${meta.bg}">${meta.label}</span>
-    ${nxt?`<button class="adv-btn" data-action="advance" data-id="${c.id}">→ ${STATUS_META[nxt].label}</button>`:''}
+    ${nxt?`<button class="adv-btn" data-action="advance" data-id="${r.id}">→ ${c.statusMeta[nxt].label}</button>`:''}
   </div>`;
 }
 
 /* ================= board ================= */
-function boardHtml(list){
-  if(!list.length) return emptyHtml();
+function boardHtml(l){
+  if(!l.length) return emptyHtml();
+  const c = cfg();
   return `<div class="board">
-    ${STATUS_ORDER.map(s=>{
-      const rows = sortList(list.filter(c=>c.status===s));
-      const meta = STATUS_META[s];
+    ${c.statusOrder.map(s=>{
+      const rows = sortList(l.filter(r=>r.status===s));
+      const meta = c.statusMeta[s];
       return `<div>
         <div class="col-head"><span style="width:11px;height:11px;border-radius:50%;background:${meta.color};display:inline-block;"></span>${meta.label}<span class="cnt">${rows.length}</span></div>
-        <div class="col-cards">${rows.map(c=>cardHtml(c,meta)).join('') || '<div class="hint" style="padding:8px 2px;">None</div>'}</div>
+        <div class="col-cards">${rows.map(r=>cardHtml(r,meta)).join('') || '<div class="hint" style="padding:8px 2px;">None</div>'}</div>
       </div>`;
     }).join('')}
   </div>`;
 }
-function cardHtml(c,meta){
-  const nxt = NEXT_STATUS[c.status];
+function cardHtml(r,meta){
+  const c = cfg();
+  const nxt = c.nextStatus[r.status];
   return `
-  <div class="card" style="border-top-color:${meta.color}" data-action="edit" data-id="${c.id}">
+  <div class="card" style="border-top-color:${meta.color}" data-action="edit" data-id="${r.id}">
     <div class="row1">
-      <span class="cnum sm">${esc(c.container)}</span>
-      ${isOverdue(c)?'<span class="overdue-tag">Overdue</span>':''}
+      <span class="cnum sm">${esc(numOf(r))}</span>
+      ${isOverdue(r)?'<span class="overdue-tag">Overdue</span>':''}
     </div>
-    <div class="cust">${esc(c.customer)}</div>
+    <div class="cust">${esc(r.customer)}</div>
     <div class="meta">
-      <span class="type-pill ${c.type==='drop'?'type-drop':'type-live'}">${c.type==='drop'?'Drop':'Live'}</span>
-      <span class="size-tag">${esc(c.size)}</span>
-      ${c.cartons?`<span>${esc(c.cartons)} ctns</span>`:''}
-      ${clipHtml(c)}
+      ${methodPillHtml(r)}
+      ${extraOf(r)?`<span class="size-tag">${esc(extraOf(r))}</span>`:''}
+      ${r.cartons?`<span>${esc(r.cartons)} ctns</span>`:''}
+      ${clipHtml(r)}
     </div>
-    ${c.note?`<div class="note-txt" style="margin-bottom:10px;">${esc(c.note)}</div>`:''}
+    ${r.note?`<div class="note-txt" style="margin-bottom:10px;">${esc(r.note)}</div>`:''}
     <div class="foot">
-      ${dateCellHtml(c)}
-      ${nxt?`<button class="adv-btn" data-action="advance" data-id="${c.id}">→ ${STATUS_META[nxt].label}</button>`:''}
+      ${dateCellHtml(r)}
+      ${nxt?`<button class="adv-btn" data-action="advance" data-id="${r.id}">→ ${c.statusMeta[nxt].label}</button>`:''}
     </div>
   </div>`;
 }
 
 /* ================= table ================= */
-function tableHtml(list){
-  if(!list.length) return emptyHtml();
-  const rows = sortList(list);
-  const cols=[['status','Status'],['customer','Customer'],['container','Container'],
-    ['scheduled','Delivery'],['cartons','Cartons'],['type','Type'],
-    ['skus','SKUs'],['note','Note'],['forwarder','Tag']];
+function tableHtml(l){
+  if(!l.length) return emptyHtml();
+  const c = cfg();
+  const rows = sortList(l);
+  const cols=[['status','Status'],['customer','Customer'],['number',c.numberLabel],
+    ['date',c.dateLabel],['cartons','Cartons'],['method',c.methodLabel],
+    ['skus','SKUs'],['note','Note'],['tag','Tag']];
   const arr = k => state.sort.key===k ? `<span class="arr">${state.sort.dir===1?'▲':'▼'}</span>` : '';
   return `
   <table class="grid">
     <thead><tr>${cols.map(([k,l])=>`<th data-action="sort" data-v="${k}">${l}${arr(k)}</th>`).join('')}<th>Files</th><th></th></tr></thead>
     <tbody>
-      ${rows.map(c=>{
-        const meta=STATUS_META[c.status], nxt=NEXT_STATUS[c.status];
-        return `<tr class="${isOverdue(c)?'late':''}" data-action="edit" data-id="${c.id}">
+      ${rows.map(r=>{
+        const meta=c.statusMeta[r.status], nxt=c.nextStatus[r.status];
+        return `<tr class="${isOverdue(r)?'late':''}" data-action="edit" data-id="${r.id}">
           <td><span class="status-flag" style="color:${meta.color};background:${meta.bg}">${meta.label}</span></td>
-          <td style="font-weight:700;">${esc(c.customer)}</td>
-          <td><span class="cnum sm">${esc(c.container)}</span><br><span class="size-tag">${esc(c.size)}</span></td>
-          <td>${dateCellHtml(c)}</td>
-          <td>${esc(c.cartons)||'—'}</td>
-          <td><span class="type-pill ${c.type==='drop'?'type-drop':'type-live'}">${c.type==='drop'?'Drop':'Live'}</span></td>
-          <td>${esc(c.skus)||'—'}</td>
-          <td class="note-txt" style="max-width:220px;">${esc(c.note)}</td>
-          <td class="fwd-txt">${esc(c.forwarder)}</td>
-          <td>${attCount(c)?clipHtml(c):'<span class="hint">—</span>'}</td>
+          <td style="font-weight:700;">${esc(r.customer)}</td>
+          <td><span class="cnum sm">${esc(numOf(r))}</span>${extraOf(r)?`<br><span class="size-tag">${esc(extraOf(r))}</span>`:''}</td>
+          <td>${dateCellHtml(r)}</td>
+          <td>${esc(r.cartons)||'—'}</td>
+          <td>${methodPillHtml(r)}</td>
+          <td>${esc(r.skus)||'—'}</td>
+          <td class="note-txt" style="max-width:220px;">${esc(r.note)}</td>
+          <td class="fwd-txt">${esc(tagOf(r))}</td>
+          <td>${attCount(r)?clipHtml(r):'<span class="hint">—</span>'}</td>
           <td style="white-space:nowrap;">
-            ${nxt?`<button class="adv-btn" data-action="advance" data-id="${c.id}">→ ${STATUS_META[nxt].label}</button>`:''}
-            <button class="icon-btn" data-action="del" data-id="${c.id}" title="Delete">${icon('trash',16)}</button>
+            ${nxt?`<button class="adv-btn" data-action="advance" data-id="${r.id}">→ ${c.statusMeta[nxt].label}</button>`:''}
+            <button class="icon-btn" data-action="del" data-id="${r.id}" title="Delete">${icon('trash',16)}</button>
           </td>
         </tr>`;
       }).join('')}
@@ -794,76 +892,80 @@ function tableHtml(list){
 
 /* ================= insights ================= */
 function insightsHtml(){
-  const all = state.containers;
+  const c = cfg();
+  const all = list();
   if(!all.length) return emptyHtml();
   const active = all.filter(isActive);
   const late = all.filter(isOverdue);
   const t=today0(), wk=new Date(t); wk.setDate(wk.getDate()+7);
-  const soon = active.filter(c=>{const d=parseLooseDate(c.scheduled);return d&&d>=t&&d<wk;});
+  const soon = active.filter(r=>{const d=parseLooseDate(dateOf(r));return d&&d>=t&&d<wk;});
   const mo = new Date(t.getFullYear(), t.getMonth(), 1);
-  const doneMo = all.filter(c=>{const d=parseLooseDate(c.scheduled);return c.status==='completed'&&d&&d>=mo;});
-  const missingPL = active.filter(c=>!attCount(c)).length;
+  const doneMo = all.filter(r=>{const d=parseLooseDate(dateOf(r));return r.status===c.finalStatus&&d&&d>=mo;});
+  const missingDocs = active.filter(r=>!attCount(r)).length;
   const byCust={};
-  active.forEach(c=>{const k=c.customer||'(unknown)'; byCust[k]=(byCust[k]||0)+1;});
+  active.forEach(r=>{const k=r.customer||'(unknown)'; byCust[k]=(byCust[k]||0)+1;});
   const top = Object.entries(byCust).sort((a,b)=>b[1]-a[1]).slice(0,8);
   const max = top.length?top[0][1]:1;
-  const live = active.filter(c=>c.type==='live').length, drop = active.length-live;
-  const lp = active.length?Math.round(live/active.length*100):0;
+  const first = active.filter(r=>methodOf(r)===c.methodOptions[0][0]).length;
+  const second = active.length-first;
+  const fp = active.length?Math.round(first/active.length*100):0;
   return `
   <div class="stats">
-    <div class="stat"><div class="v">${active.length}</div><div class="l">Active containers</div></div>
-    <div class="stat"><div class="v">${soon.length}</div><div class="l">Arriving next 7 days</div></div>
+    <div class="stat"><div class="v">${active.length}</div><div class="l">Active ${c.plural}</div></div>
+    <div class="stat"><div class="v">${soon.length}</div><div class="l">Due next 7 days</div></div>
     <div class="stat"><div class="v" style="color:${late.length?'var(--rose)':'inherit'}">${late.length}</div><div class="l">Overdue</div></div>
-    <div class="stat"><div class="v">${doneMo.length}</div><div class="l">Completed this month</div></div>
-    <div class="stat"><div class="v" style="color:${missingPL?'var(--rust)':'inherit'}">${missingPL}</div><div class="l">Active, no packing list</div></div>
+    <div class="stat"><div class="v">${doneMo.length}</div><div class="l">${c.statusMeta[c.finalStatus].label} this month</div></div>
+    <div class="stat"><div class="v" style="color:${missingDocs?'var(--rust)':'inherit'}">${missingDocs}</div><div class="l">Active, no ${c.attachLabel}</div></div>
   </div>
   <div class="panel-card">
-    <h3>Active containers by customer</h3>
+    <h3>Active ${c.plural} by customer</h3>
     ${top.map(([n,v])=>`<div class="bar-row">
       <span class="bl">${esc(n)}</span>
       <span class="bt"><span class="bf" style="width:${Math.round(v/max*100)}%"></span></span>
       <span class="bn">${v}</span></div>`).join('')}
   </div>
   <div class="panel-card">
-    <h3>Live unload vs drop (active)</h3>
+    <h3>${c.methodLabel} split (active)</h3>
     <div class="split">
-      ${live?`<div style="background:var(--rust);flex:${live}">${lp}%</div>`:''}
-      ${drop?`<div style="background:var(--navy-soft);flex:${drop}">${100-lp}%</div>`:''}
+      ${first?`<div style="background:var(--rust);flex:${first}">${fp}%</div>`:''}
+      ${second?`<div style="background:var(--navy-soft);flex:${second}">${100-fp}%</div>`:''}
     </div>
     <div class="legend">
-      <span><i style="background:var(--rust)"></i>Live unload · ${live}</span>
-      <span><i style="background:var(--navy-soft)"></i>Drop · ${drop}</span>
+      <span><i style="background:var(--rust)"></i>${c.methodOptions[0][1]} · ${first}</span>
+      <span><i style="background:var(--navy-soft)"></i>${c.methodOptions[1][1]} · ${second}</span>
     </div>
   </div>`;
 }
 function emptyHtml(){
+  const c = cfg();
   return `<div class="empty">
-    <h3>${state.containers.length?'Nothing matches':'No containers yet'}</h3>
-    <p>${state.containers.length?'Try a different filter or search.':'Add your first container, or import your Google Sheet.'}</p>
+    <h3>${list().length?'Nothing matches':`No ${c.plural} yet`}</h3>
+    <p>${list().length?'Try a different filter or search.':`Add your first ${c.plural.replace(/s$/,'')}${c.showImport?', or import your Google Sheet':''}.`}</p>
   </div>`;
 }
 
 /* ================= date popover ================= */
 function datePopHtml(){
   if(!state.datePop) return '';
-  const c = state.containers.find(x=>x.id===state.datePop.id);
-  if(!c) return '';
+  const r = list().find(x=>x.id===state.datePop.id);
+  if(!r) return '';
+  const c = cfg();
   const {x,y} = state.datePop;
   const left = Math.min(Math.max(8,x), Math.max(8, window.innerWidth-316));
   const top  = Math.min(y, Math.max(8, window.innerHeight-300));
   return `
   <div class="pop-backdrop" data-action="close-date"></div>
   <div class="pop" style="left:${left}px;top:${top}px;">
-    <h4>Delivery date</h4>
+    <h4>${c.dateLabel}</h4>
     <label for="popDate">Date</label>
-    <input type="date" id="popDate" value="${toISO(c.scheduled)}">
+    <input type="date" id="popDate" value="${toISO(dateOf(r))}">
     <div class="quick">
       <button data-action="date-quick" data-v="0">Today</button>
       <button data-action="date-quick" data-v="1">Tomorrow</button>
       <button data-action="date-quick" data-v="7">+1 week</button>
     </div>
     <label for="popTime">Time / window (optional)</label>
-    <input type="text" id="popTime" value="${esc(timePart(c.scheduled))}" placeholder="e.g. 11:00 AM or 1-2pm">
+    <input type="text" id="popTime" value="${esc(timePart(dateOf(r)))}" placeholder="e.g. 11:00 AM or 1-2pm">
     <div class="pop-f">
       <button class="btn btn-ghost" data-action="date-clear">Clear</button>
       <button class="btn btn-primary" data-action="date-save">Save date</button>
@@ -874,45 +976,49 @@ function datePopHtml(){
 /* ================= form ================= */
 function formHtml(){
   if(!state.showForm) return '';
-  const editing = state.editingId ? state.containers.find(x=>x.id===state.editingId) : null;
-  const v = editing || {customer:'',container:'',size:"40'HQ",scheduled:'',cartons:'',skus:'',note:'',status:'pending',forwarder:'',attachments:[]};
+  const c = cfg();
+  const editing = state.editingId ? list().find(x=>x.id===state.editingId) : null;
+  const v = editing || {customer:'', [c.numberField]:'', [c.extraField]:(c.extraOptions?c.extraOptions[2]:''), [c.dateField]:'', cartons:'', skus:'', note:'', status:c.statusOrder[0], [c.tagField]:'', attachments:[]};
+  const extraFieldHtml = c.extraOptions
+    ? `<select id="f_extra">${c.extraOptions.map(s=>`<option ${extraOf(v)===s?'selected':''}>${s}</option>`).join('')}</select>`
+    : `<input type="text" id="f_extra" value="${esc(extraOf(v)||'')}" placeholder="${c.extraPlaceholder||''}">`;
   return `
   <div class="overlay" id="formOverlay">
     <div class="panel">
       <div class="panel-h">
-        <h2>${editing?'Edit container':'New container'}</h2>
+        <h2>${editing?`Edit ${c.plural.replace(/s$/,'')}`:`New ${c.plural.replace(/s$/,'')}`}</h2>
         <button class="icon-btn" data-action="close-form">${icon('x',20)}</button>
       </div>
       <div class="panel-b">
         <div class="field"><label>Customer</label><input type="text" id="f_customer" value="${esc(v.customer)}" placeholder="e.g. Allsetthealth"></div>
         <div class="row2">
-          <div class="field"><label>Container #</label><input type="text" id="f_container" value="${esc(v.container)}" placeholder="e.g. BSIU9959987" style="font-family:'JetBrains Mono',monospace;font-weight:700;letter-spacing:.04em;"></div>
-          <div class="field"><label>Size</label><select id="f_size">${["20'","40'","40'HQ","45'HC","Other"].map(s=>`<option ${v.size===s?'selected':''}>${s}</option>`).join('')}</select></div>
+          <div class="field"><label>${c.numberLabel}</label><input type="text" id="f_number" value="${esc(numOf(v))}" placeholder="${c.numberPlaceholder}" style="font-family:'JetBrains Mono',monospace;font-weight:700;letter-spacing:.04em;"></div>
+          <div class="field"><label>${c.extraLabel}</label>${extraFieldHtml}</div>
         </div>
         <div class="row2">
-          <div class="field"><label>Delivery date</label><input type="date" id="f_date" value="${toISO(v.scheduled)}"></div>
-          <div class="field"><label>Time / window</label><input type="text" id="f_time" value="${esc(timePart(v.scheduled))}" placeholder="11:00 AM or 1-2pm"></div>
+          <div class="field"><label>${c.dateLabel}</label><input type="date" id="f_date" value="${toISO(dateOf(v))}"></div>
+          <div class="field"><label>Time / window</label><input type="text" id="f_time" value="${esc(timePart(dateOf(v)))}" placeholder="11:00 AM or 1-2pm"></div>
         </div>
         <div class="row2">
           <div class="field"><label>Cartons / Pallets</label><input type="text" id="f_cartons" value="${esc(v.cartons)}" placeholder="e.g. 1452 or 20 plts"></div>
-          <div class="field"><label>Unload type</label>
+          <div class="field"><label>${c.methodLabel}</label>
             <div class="seg">
-              <button type="button" class="${state.formType==='live'?'on-live':''}" data-action="form-type" data-v="live">Live unload</button>
-              <button type="button" class="${state.formType==='drop'?'on-drop':''}" data-action="form-type" data-v="drop">Drop</button>
+              <button type="button" class="${state.formMethod===c.methodOptions[0][0]?'on-a':''}" data-action="form-method" data-v="${c.methodOptions[0][0]}">${c.methodOptions[0][1]}</button>
+              <button type="button" class="${state.formMethod===c.methodOptions[1][0]?'on-b':''}" data-action="form-method" data-v="${c.methodOptions[1][0]}">${c.methodOptions[1][1]}</button>
             </div>
           </div>
         </div>
         <div class="row2">
           <div class="field"><label>SKUs</label><input type="text" id="f_skus" value="${esc(v.skus)}" placeholder="e.g. 13"></div>
-          <div class="field"><label>Status</label><select id="f_status">${STATUS_ORDER.map(s=>`<option value="${s}" ${v.status===s?'selected':''}>${STATUS_META[s].label}</option>`).join('')}</select></div>
+          <div class="field"><label>Status</label><select id="f_status">${c.statusOrder.map(s=>`<option value="${s}" ${v.status===s?'selected':''}>${c.statusMeta[s].label}</option>`).join('')}</select></div>
         </div>
         <div class="field"><label>Note</label><textarea id="f_note" placeholder="e.g. Sort by FBA ID, unload/relabel/reload…">${esc(v.note)}</textarea></div>
-        <div class="field"><label>Tag (freight forwarder, etc.)</label><input type="text" id="f_forwarder" value="${esc(v.forwarder)}" placeholder="e.g. starling freight"></div>
+        <div class="field"><label>${c.tagLabel}</label><input type="text" id="f_tag" value="${esc(tagOf(v))}" placeholder="${c.tagPlaceholder}"></div>
 
         <div class="field">
-          <label>Packing list &amp; documents</label>
+          <label>Attachments</label>
           <div class="attach-box">
-            ${editing ? attachHtml(editing) : '<div class="attach-empty">Save the container first, then reopen it to attach the packing list.</div>'}
+            ${editing ? attachHtml(editing) : `<div class="attach-empty">Save the ${c.plural.replace(/s$/,'')} first, then reopen it to attach ${c.attachLabel}.</div>`}
           </div>
         </div>
       </div>
@@ -926,27 +1032,54 @@ function formHtml(){
     </div>
   </div>`;
 }
-function attachHtml(c){
-  const list = c.attachments||[];
+function isPhoto(a){
+  return (a.type||'').startsWith('image/') || /\.(png|jpe?g|gif|webp|heic)$/i.test(a.name||'');
+}
+function attachHtml(r){
+  const all = r.attachments||[];
+  const photos = all.filter(isPhoto);
+  const docs = all.filter(a=>!isPhoto(a));
+  const c = cfg();
   return `
-    ${list.length ? `<div class="attach-list">${list.map(a=>`
+    <div class="attach-sublabel">Proof photos${photos.length?` · ${photos.length}`:''}</div>
+    ${photos.length ? `<div class="photo-grid">${photos.map(a=>`
+      <div class="photo-thumb" data-action="att-open" data-id="${r.id}" data-v="${a.id}" title="${esc(a.name)}">
+        <img src="${esc(a.url)}" alt="${esc(a.name)}" loading="lazy">
+        <button class="rm" data-action="att-del" data-id="${r.id}" data-v="${a.id}" title="Remove">${icon('x',14)}</button>
+        <div class="dl">${icon('download',12)} Open</div>
+      </div>`).join('')}</div>`
+    : `<div class="attach-empty">No proof photos yet.</div>`}
+    <div class="attach-actions">
+      <label class="file-label cam">
+        ${icon('camera',17)} ${state.uploading?'Uploading…':'Take photo'}
+        <input type="file" id="camInput" accept="image/*" capture="environment" multiple ${state.uploading?'disabled':''}>
+      </label>
+      <label class="file-label">
+        ${icon('image',17)} Add from library
+        <input type="file" id="photoInput" accept="image/*" multiple ${state.uploading?'disabled':''}>
+      </label>
+    </div>
+
+    <div class="attach-sublabel" style="margin-top:16px;">Documents${docs.length?` · ${docs.length}`:''}</div>
+    ${docs.length ? `<div class="attach-list">${docs.map(a=>`
       <div class="attach-item">
         <span style="color:var(--ink-soft)">${icon('file',18)}</span>
         <span class="nm">${esc(a.name)}</span>
         <span class="sz">${fmtSize(a.size)}</span>
-        <button class="icon-btn" data-action="att-open" data-id="${c.id}" data-v="${a.id}" title="Open / download">${icon('download',17)}</button>
-        <button class="icon-btn" data-action="att-del" data-id="${c.id}" data-v="${a.id}" title="Remove">${icon('trash',17)}</button>
+        <button class="icon-btn" data-action="att-open" data-id="${r.id}" data-v="${a.id}" title="Open / download">${icon('download',17)}</button>
+        <button class="icon-btn" data-action="att-del" data-id="${r.id}" data-v="${a.id}" title="Remove">${icon('trash',17)}</button>
       </div>`).join('')}</div>`
-    : '<div class="attach-empty">No packing list attached yet.</div>'}
+    : `<div class="attach-empty">No ${c.attachLabel} attached yet.</div>`}
     <label class="file-label">
-      ${icon('upload',17)} ${state.uploading?'Uploading…':'Add file'}
-      <input type="file" id="attInput" multiple accept=".pdf,.xlsx,.xls,.csv,.png,.jpg,.jpeg,.doc,.docx" ${state.uploading?'disabled':''}>
+      ${icon('upload',17)} Add file
+      <input type="file" id="attInput" multiple accept=".pdf,.xlsx,.xls,.csv,.doc,.docx" ${state.uploading?'disabled':''}>
     </label>
+
     ${state.uploadError?`<div style="color:var(--rose);font-size:14px;font-weight:700;margin-top:10px;">${esc(state.uploadError)}</div>`:''}
-    <div class="hint" style="margin-top:10px;">PDF, Excel, CSV or photo · up to 15 MB each · visible to your whole team</div>`;
+    <div class="hint" style="margin-top:10px;">Photos, PDF, Excel or CSV · up to 15 MB each · visible to your whole team</div>`;
 }
 
-/* ================= import ================= */
+/* ================= import (Inbound only) ================= */
 function importHtml(){
   if(!state.showImport) return '';
   const n = state.importRows.length;
@@ -976,13 +1109,13 @@ function importHtml(){
 
 /* ================= render ================= */
 function render(){
-  const list = getFiltered();
+  const l = getFiltered();
   let body;
-  if(!state.loaded) body = '<div class="empty"><h3>Connecting…</h3></div>';
-  else if(state.view==='schedule') body = scheduleHtml(list);
-  else if(state.view==='board') body = boardHtml(list);
+  if(!loaded()) body = '<div class="empty"><h3>Connecting…</h3></div>';
+  else if(state.view==='schedule') body = scheduleHtml(l);
+  else if(state.view==='board') body = boardHtml(l);
   else if(state.view==='insights') body = insightsHtml();
-  else body = tableHtml(list);
+  else body = tableHtml(l);
   document.getElementById('root').innerHTML =
     headerHtml() + controlsHtml() + `<div class="view">${body}</div>` +
     formHtml() + importHtml() + datePopHtml();
@@ -995,8 +1128,8 @@ function wireInputs(){
     const s2 = document.getElementById('searchInput');
     if(s2){ s2.focus(); s2.setSelectionRange(s2.value.length, s2.value.length); }
   };
-  const t = document.getElementById('typeSelect');
-  if(t) t.onchange = e => { state.typeFilter = e.target.value; render(); };
+  const t = document.getElementById('methodSelect');
+  if(t) t.onchange = e => { state.methodFilter = e.target.value; render(); };
   const pz = document.getElementById('pasteZone');
   if(pz) pz.addEventListener('paste', e => {
     e.preventDefault();
@@ -1005,6 +1138,10 @@ function wireInputs(){
   });
   const fi = document.getElementById('attInput');
   if(fi) fi.onchange = e => handleFiles(e.target.files);
+  const cam = document.getElementById('camInput');
+  if(cam) cam.onchange = e => handleFiles(e.target.files);
+  const ph = document.getElementById('photoInput');
+  if(ph) ph.onchange = e => handleFiles(e.target.files);
   const pd = document.getElementById('popDate');
   if(pd) pd.focus();
 }
@@ -1012,7 +1149,7 @@ function wireInputs(){
 /* ================= attachments (UI side) ================= */
 async function handleFiles(files){
   if(!files || !files.length || !state.editingId) return;
-  const cid = state.editingId;
+  const mode = state.mode, rid = state.editingId;
   state.uploadError=''; state.uploading=true; render();
   const newMetas = [];
   for(const f of Array.from(files)){
@@ -1021,33 +1158,33 @@ async function handleFiles(files){
       continue;
     }
     try{
-      const meta = await uploadAttachment(cid, f);
+      const meta = await uploadAttachment(mode, rid, f);
       newMetas.push(meta);
     }catch(err){
       state.uploadError = `Couldn't upload "${f.name}". Check your connection and try again.`;
     }
   }
   if(newMetas.length){
-    const c = state.containers.find(x=>x.id===cid);
-    const merged = (c && c.attachments ? c.attachments.slice() : []).concat(newMetas);
-    await patchContainer(cid, {attachments: merged});
+    const r = list().find(x=>x.id===rid);
+    const merged = (r && r.attachments ? r.attachments.slice() : []).concat(newMetas);
+    await patchRecord(mode, rid, {attachments: merged});
   }
   state.uploading = false;
   render();
 }
-function openAttachment(cid, aid){
-  const c = state.containers.find(x=>x.id===cid);
-  const a = c && (c.attachments||[]).find(x=>x.id===aid);
+function openAttachment(rid, aid){
+  const r = list().find(x=>x.id===rid);
+  const a = r && (r.attachments||[]).find(x=>x.id===aid);
   if(a && a.url) window.open(a.url, '_blank');
 }
-async function removeAttachment(cid, aid){
-  const c = state.containers.find(x=>x.id===cid);
-  if(!c) return;
+async function removeAttachment(rid, aid){
+  const r = list().find(x=>x.id===rid);
+  if(!r) return;
   if(!confirm('Remove this file?')) return;
-  const a = (c.attachments||[]).find(x=>x.id===aid);
+  const a = (r.attachments||[]).find(x=>x.id===aid);
   if(a) await deleteAttachmentFile(a.path);
-  const remaining = (c.attachments||[]).filter(x=>x.id!==aid);
-  await patchContainer(cid, {attachments: remaining});
+  const remaining = (r.attachments||[]).filter(x=>x.id!==aid);
+  await patchRecord(state.mode, rid, {attachments: remaining});
 }
 
 /* ================= events ================= */
@@ -1058,16 +1195,21 @@ document.addEventListener('click', e => {
   if(!el) return;
   const act = el.dataset.action, id = el.dataset.id, v = el.dataset.v;
 
-  if(act==='set-view'){ state.view=v; render(); }
+  if(act==='set-mode'){
+    state.mode=v; state.statusFilter='active'; state.methodFilter='all'; state.search='';
+    state.sort={key:'date',dir:1}; state.showForm=false; state.editingId=null; state.showImport=false;
+    render();
+  }
+  else if(act==='set-view'){ state.view=v; render(); }
   else if(act==='set-status'){ state.statusFilter=v; render(); }
   else if(act==='sort'){
     if(state.sort.key===v) state.sort.dir*=-1; else state.sort={key:v,dir:1};
     render();
   }
-  else if(act==='new'){ state.showForm=true; state.editingId=null; state.formType='live'; state.uploadError=''; render(); }
+  else if(act==='new'){ state.showForm=true; state.editingId=null; state.formMethod=cfg().methodOptions[0][0]; state.uploadError=''; render(); }
   else if(act==='edit'){
-    const c = state.containers.find(x=>x.id===id);
-    state.editingId=id; state.formType=c?c.type:'live'; state.showForm=true; state.uploadError=''; render();
+    const r = list().find(x=>x.id===id);
+    state.editingId=id; state.formMethod=r?methodOf(r):cfg().methodOptions[0][0]; state.showForm=true; state.uploadError=''; render();
   }
   else if(act==='open-date'){
     e.stopPropagation();
@@ -1087,42 +1229,43 @@ document.addEventListener('click', e => {
     const iso = (document.getElementById('popDate')||{}).value || '';
     const tm  = ((document.getElementById('popTime')||{}).value || '').trim();
     const base = fromISO(iso);
-    const scheduled = base ? (tm ? `${base} ${tm}` : base) : '';
+    const val = base ? (tm ? `${base} ${tm}` : base) : '';
     state.datePop = null;
-    patchContainer(targetId, {scheduled});
+    patchRecord(state.mode, targetId, {[cfg().dateField]: val});
   }
   else if(act==='date-clear'){
     const targetId = state.datePop.id;
     state.datePop = null;
-    patchContainer(targetId, {scheduled:''});
+    patchRecord(state.mode, targetId, {[cfg().dateField]: ''});
   }
   else if(act==='advance'){
     e.stopPropagation();
-    const c = state.containers.find(x=>x.id===id);
-    if(c && NEXT_STATUS[c.status]) patchContainer(id, {status: NEXT_STATUS[c.status]});
+    const r = list().find(x=>x.id===id);
+    const nxt = r && cfg().nextStatus[r.status];
+    if(nxt) patchRecord(state.mode, id, {status: nxt});
   }
   else if(act==='del'){
     e.stopPropagation();
-    if(confirm('Delete this container and its files? This cannot be undone.')){
-      const c = state.containers.find(x=>x.id===id);
-      if(c) purgeAttachments(c);
-      removeContainer(id);
+    if(confirm(`Delete this ${cfg().plural.replace(/s$/,'')} and its files? This cannot be undone.`)){
+      const r = list().find(x=>x.id===id);
+      if(r) purgeAttachments(r);
+      removeRecord(state.mode, id);
     }
   }
   else if(act==='att-open'){ e.stopPropagation(); openAttachment(id, v); }
   else if(act==='att-del'){ e.stopPropagation(); removeAttachment(id, v); }
-  else if(act==='form-type'){
-    state.formType=v;
+  else if(act==='form-method'){
+    state.formMethod=v;
     document.querySelectorAll('.seg button').forEach(b=>b.className='');
-    el.className = v==='live'?'on-live':'on-drop';
+    el.className = v===cfg().methodOptions[0][0] ? 'on-a' : 'on-b';
   }
   else if(act==='close-form'){ closeForm(); }
   else if(act==='save-form'){ saveForm(); }
   else if(act==='delete-from-form'){
-    if(confirm('Delete this container and its files? This cannot be undone.')){
-      const c = state.containers.find(x=>x.id===state.editingId);
-      if(c) purgeAttachments(c);
-      removeContainer(state.editingId);
+    if(confirm(`Delete this ${cfg().plural.replace(/s$/,'')} and its files? This cannot be undone.`)){
+      const r = list().find(x=>x.id===state.editingId);
+      if(r) purgeAttachments(r);
+      removeRecord(state.mode, state.editingId);
       state.showForm=false; state.editingId=null;
       render();
     }
@@ -1132,7 +1275,7 @@ document.addEventListener('click', e => {
   else if(act==='clear-paste'){ e.preventDefault(); state.importRows=[]; render(); }
   else if(act==='run-import'){
     if(!state.importRows.length) return;
-    bulkCreate(rowsToContainers(state.importRows));
+    bulkCreate('inbound', rowsToContainers(state.importRows));
     state.showImport=false; state.importRows=[];
     render();
   }
@@ -1150,43 +1293,44 @@ function closeForm(){ state.showForm=false; state.editingId=null; state.uploadEr
 function closeImport(){ state.showImport=false; state.importRows=[]; render(); }
 
 async function saveForm(){
+  const c = cfg();
   const g = id => (document.getElementById(id)||{}).value || '';
   const base = fromISO(g('f_date'));
   const tm = g('f_time').trim();
   const data = {
     customer:g('f_customer').trim(),
-    container:g('f_container').trim().toUpperCase(),
-    size:g('f_size'),
-    scheduled: base ? (tm ? `${base} ${tm}` : base) : '',
+    [c.numberField]: c.numberField==='container' ? g('f_number').trim().toUpperCase() : g('f_number').trim(),
+    [c.extraField]:g('f_extra'),
+    [c.dateField]: base ? (tm ? `${base} ${tm}` : base) : '',
     cartons:g('f_cartons').trim(),
-    type:state.formType,
+    [c.methodField]:state.formMethod,
     skus:g('f_skus').trim(),
     status:g('f_status'),
     note:g('f_note').trim(),
-    forwarder:g('f_forwarder').trim(),
+    [c.tagField]:g('f_tag').trim(),
   };
-  if(!data.customer || !data.container){ alert('Customer and container # are required.'); return; }
+  if(!data.customer || !data[c.numberField]){ alert(`Customer and ${c.numberLabel.toLowerCase()} are required.`); return; }
   if(state.editingId){
-    await patchContainer(state.editingId, data);
+    await patchRecord(state.mode, state.editingId, data);
     state.showForm=false; state.editingId=null;
     render();
   }else{
-    const newId = await createContainer(data);
+    const newId = await createRecord(state.mode, data);
     state.editingId = newId;
     render();
   }
 }
 
 function exportCsv(){
-  const cols=['customer','container','size','scheduled','cartons','type','skus','note','status','forwarder'];
-  const head='Customer,Container,Size,Delivery scheduled,Cartons/Pallet,Live or drop,SKUs,Note,Status,Tag,Files';
+  const c = cfg();
+  const fieldOrder = ['customer', c.numberField, c.extraField, c.dateField, 'cartons', c.methodField, 'skus', 'note', 'status', c.tagField];
   const q = s => `"${String(s??'').replace(/"/g,'""')}"`;
-  const lines=[head].concat(state.containers.map(c=>
-    cols.map(k=>q(c[k])).join(',') + ',' + q((c.attachments||[]).map(a=>a.name).join('; '))));
+  const lines=[c.csvHead].concat(list().map(r=>
+    fieldOrder.map(k=>q(r[k])).join(',') + ',' + q((r.attachments||[]).map(a=>a.name).join('; '))));
   const blob = new Blob([lines.join('\n')],{type:'text/csv'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = 'manifest-containers.csv';
+  a.download = c.csvFile;
   a.click();
   URL.revokeObjectURL(a.href);
 }
