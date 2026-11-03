@@ -287,6 +287,29 @@ table.grid{width:100%;border-collapse:collapse;background:var(--card);border-rad
 .import-prev td{padding:9px 11px;font-size:14px;border-bottom:1px solid var(--line);white-space:nowrap;max-width:150px;overflow:hidden;text-overflow:ellipsis;}
 .import-more{font-size:14px;color:var(--ink-soft);padding:10px 11px;font-weight:600;}
 
+/* ============ Batch grid modal ============ */
+.modal.wide{width:min(96vw,1180px);max-width:96vw;}
+.batch-scroll{overflow:auto;border:1.5px solid var(--line);border-radius:11px;max-height:60vh;}
+table.batch{border-collapse:collapse;width:100%;font-size:14px;background:var(--surface,#fff);}
+.batch thead th{position:sticky;top:0;z-index:2;background:#faf9f5;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);font-weight:800;padding:9px 8px;border-bottom:1.5px solid var(--line);white-space:nowrap;}
+.batch thead th.rownum{width:34px;text-align:center;}
+.batch td{border-bottom:1px solid var(--line);padding:3px;vertical-align:middle;}
+.batch td.rownum{text-align:center;color:var(--ink-soft);font-size:12.5px;font-weight:700;}
+.batch tr:last-child td{border-bottom:none;}
+.batch input,.batch select{
+  width:100%;border:1.5px solid transparent;border-radius:7px;background:transparent;
+  font-family:'Archivo',sans-serif;font-size:14px;font-weight:500;color:var(--ink);padding:8px 8px;
+}
+.batch input:hover,.batch select:hover{border-color:var(--line);background:#fff;}
+.batch input:focus,.batch select:focus{outline:none;border-color:var(--navy-soft);background:#fff;}
+.batch input.mono{font-family:'JetBrains Mono',monospace;font-weight:700;letter-spacing:.03em;}
+.batch .rowdel{border:none;background:transparent;color:var(--ink-soft);cursor:pointer;padding:6px;border-radius:6px;display:inline-flex;}
+.batch .rowdel:hover{background:var(--rose-bg);color:var(--rose);}
+.batch-col-cust{min-width:150px;}
+.batch-col-num{min-width:150px;}
+.batch-col-note{min-width:180px;}
+.batch-foot-left{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+
 ::placeholder{color:#a5a094;font-weight:500;}
 @media(max-width:1000px){.board{grid-template-columns:repeat(2,1fr);}}
 @media(max-width:700px){
@@ -399,6 +422,9 @@ let state = {
   formMethod:null,
   showImport:false,
   importRows:[],
+  showBatch:false,
+  batchRows:[],
+  batchSaving:false,
   datePop:null,
   uploading:false,
   uploadError:'',
@@ -651,6 +677,7 @@ function icon(n,s=17){
     refresh:'<polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>',
     camera:'<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>',
     image:'<rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>',
+    table:'<rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/>',
   }[n]||'';
   return `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
 }
@@ -700,12 +727,15 @@ function controlsHtml(){
     ? `<button class="btn btn-ghost" data-action="migrate">${icon('refresh',17)} Migrate old data</button>` : '';
   const importBtn = c.showImport
     ? `<button class="btn btn-ghost" data-action="import">${icon('upload',17)} Import</button>` : '';
+  const batchBtn = c.showImport
+    ? `<button class="btn btn-ghost" data-action="batch">${icon('table',17)} New batch</button>` : '';
   if(state.view==='insights'){
     return `<div class="controls">
       <span class="hint">Insights are computed from every ${c.plural.replace(/s$/,'')} record, ignoring filters.</span>
       <div class="spacer"></div>
       ${migrateBtn}${importBtn}
       <button class="btn btn-ghost" data-action="export">${icon('download',17)} Export</button>
+      ${batchBtn}
       <button class="btn btn-primary" data-action="new">${icon('plus',17)} New ${c.plural.replace(/s$/,'')}</button>
     </div>`;
   }
@@ -731,6 +761,7 @@ function controlsHtml(){
     <div class="spacer"></div>
     ${migrateBtn}${importBtn}
     <button class="btn btn-ghost" data-action="export">${icon('download',17)} Export</button>
+    ${batchBtn}
     <button class="btn btn-primary" data-action="new">${icon('plus',17)} New ${c.plural.replace(/s$/,'')}</button>
   </div>`;
 }
@@ -1107,6 +1138,92 @@ function importHtml(){
   </div>`;
 }
 
+/* ================= batch grid (Inbound only) =================
+   A spreadsheet-style tab: one row per container, all fields inline.
+   Rows live in state.batchRows while the modal is open; they are only
+   written to Firestore (one batched commit) when the user hits Save.
+   Edits to the grid DON'T re-render the whole modal — we mutate
+   state.batchRows directly on input so focus and cursor position are
+   never lost mid-typing. */
+function blankBatchRow(){
+  return {rid:uid(), customer:'', container:'', size:"40'HQ", date:'', time:'',
+          cartons:'', type:'live', skus:'', status:'pending', note:'', forwarder:''};
+}
+function batchRowFilled(r){
+  return (r.customer||'').trim() || (r.container||'').trim();
+}
+function batchHtml(){
+  if(!state.showBatch) return '';
+  const rows = state.batchRows;
+  const ready = rows.filter(batchRowFilled).length;
+  const sizes = ["20'","40'","40'HQ","45'HC","Other"];
+  const im = ENTITIES.inbound;
+  const statuses = im.statusOrder;
+  return `
+  <div class="modal-ov" id="batchOverlay">
+    <div class="modal wide">
+      <div class="modal-h">
+        <h2>Add containers — batch</h2>
+        <button class="icon-btn" data-action="close-batch">${icon('x',20)}</button>
+      </div>
+      <div class="modal-b">
+        <div class="batch-scroll">
+          <table class="batch">
+            <thead><tr>
+              <th class="rownum">#</th>
+              <th class="batch-col-cust">Customer</th>
+              <th class="batch-col-num">Container #</th>
+              <th>Size</th>
+              <th>Delivery date</th>
+              <th>Time / window</th>
+              <th>Cartons</th>
+              <th>Type</th>
+              <th>SKUs</th>
+              <th>Status</th>
+              <th class="batch-col-note">Note</th>
+              <th>Tag</th>
+              <th></th>
+            </tr></thead>
+            <tbody>
+              ${rows.map((r,i)=>`
+              <tr data-rid="${r.rid}">
+                <td class="rownum">${i+1}</td>
+                <td><input data-f="customer" value="${esc(r.customer)}" placeholder="Allsetthealth"></td>
+                <td><input class="mono" data-f="container" value="${esc(r.container)}" placeholder="BSIU9959987"></td>
+                <td><select data-f="size">${sizes.map(s=>`<option ${r.size===s?'selected':''}>${s}</option>`).join('')}</select></td>
+                <td><input type="date" data-f="date" value="${esc(r.date)}"></td>
+                <td><input data-f="time" value="${esc(r.time)}" placeholder="11:00 AM"></td>
+                <td><input data-f="cartons" value="${esc(r.cartons)}" placeholder="1452"></td>
+                <td><select data-f="type"><option value="live" ${r.type==='live'?'selected':''}>Live</option><option value="drop" ${r.type==='drop'?'selected':''}>Drop</option></select></td>
+                <td><input data-f="skus" value="${esc(r.skus)}" placeholder="13"></td>
+                <td><select data-f="status">${statuses.map(s=>`<option value="${s}" ${r.status===s?'selected':''}>${im.statusMeta[s].label}</option>`).join('')}</select></td>
+                <td><input data-f="note" value="${esc(r.note)}" placeholder="Sort by FBA ID…"></td>
+                <td><input data-f="forwarder" value="${esc(r.forwarder)}" placeholder="starling freight"></td>
+                <td><button class="rowdel" data-action="batch-del-row" data-rid="${r.rid}" title="Remove row">${icon('trash',16)}</button></td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+        <div style="margin-top:12px; display:flex; gap:9px; flex-wrap:wrap;">
+          <button class="btn btn-ghost" data-action="batch-add-row">${icon('plus',16)} Add row</button>
+          <button class="btn btn-ghost" data-action="batch-add-5">${icon('plus',16)} Add 5 rows</button>
+          <button class="btn btn-ghost" data-action="batch-paste">${icon('upload',16)} Paste from sheet</button>
+        </div>
+        <div class="hint" style="margin-top:10px;">Tab between cells like a spreadsheet. Empty rows are skipped. Attach packing lists later by opening a saved container.${state.batchSaving?' <strong style="color:var(--teal)">Saving…</strong>':''}</div>
+      </div>
+      <div class="modal-f">
+        <div class="batch-foot-left">
+          <span class="hint">${ready} ready${rows.length-ready>0?` · ${rows.length-ready} empty row${rows.length-ready===1?'':'s'} skipped`:''}</span>
+        </div>
+        <div style="display:flex; gap:10px;">
+          <button class="btn btn-ghost" data-action="close-batch">Cancel</button>
+          <button class="btn btn-primary" data-action="batch-save" ${ready&&!state.batchSaving?'':'disabled'}>Save ${ready||''} container${ready===1?'':'s'}</button>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
 /* ================= render ================= */
 function render(){
   const l = getFiltered();
@@ -1118,7 +1235,7 @@ function render(){
   else body = tableHtml(l);
   document.getElementById('root').innerHTML =
     headerHtml() + controlsHtml() + `<div class="view">${body}</div>` +
-    formHtml() + importHtml() + datePopHtml();
+    formHtml() + importHtml() + batchHtml() + datePopHtml();
   wireInputs();
 }
 function wireInputs(){
@@ -1144,6 +1261,37 @@ function wireInputs(){
   if(ph) ph.onchange = e => handleFiles(e.target.files);
   const pd = document.getElementById('popDate');
   if(pd) pd.focus();
+
+  // Batch grid: mutate state.batchRows in place on every edit, WITHOUT
+  // re-rendering — that keeps the caret where the user is typing. The
+  // ready-count in the footer updates only when rows are added/removed.
+  document.querySelectorAll('.batch tr[data-rid]').forEach(tr => {
+    const rid = tr.dataset.rid;
+    const row = state.batchRows.find(r=>r.rid===rid);
+    if(!row) return;
+    tr.querySelectorAll('[data-f]').forEach(inp => {
+      const f = inp.dataset.f;
+      const evt = inp.tagName==='SELECT' ? 'change' : 'input';
+      inp.addEventListener(evt, e => {
+        row[f] = e.target.value;
+        if(f==='customer' || f==='container') refreshBatchCounts();
+      });
+    });
+  });
+}
+
+/* Update only the footer count + Save button, so typing never re-renders the grid */
+function refreshBatchCounts(){
+  if(!state.showBatch) return;
+  const ready = state.batchRows.filter(batchRowFilled).length;
+  const total = state.batchRows.length;
+  const foot = document.querySelector('#batchOverlay .batch-foot-left .hint');
+  if(foot) foot.textContent = `${ready} ready${total-ready>0?` · ${total-ready} empty row${total-ready===1?'':'s'} skipped`:''}`;
+  const saveBtn = document.querySelector('#batchOverlay [data-action="batch-save"]');
+  if(saveBtn){
+    saveBtn.disabled = !(ready && !state.batchSaving);
+    saveBtn.textContent = `Save ${ready||''} container${ready===1?'':'s'}`;
+  }
 }
 
 /* ================= attachments (UI side) ================= */
@@ -1191,6 +1339,7 @@ async function removeAttachment(rid, aid){
 document.addEventListener('click', e => {
   if(e.target.id==='formOverlay'){ closeForm(); return; }
   if(e.target.id==='importOverlay'){ closeImport(); return; }
+  if(e.target.id==='batchOverlay'){ return; } // don't close the grid on a stray backdrop click — too easy to lose a lot of typing
   const el = e.target.closest('[data-action]');
   if(!el) return;
   const act = el.dataset.action, id = el.dataset.id, v = el.dataset.v;
@@ -1279,6 +1428,18 @@ document.addEventListener('click', e => {
     state.showImport=false; state.importRows=[];
     render();
   }
+  else if(act==='batch'){ state.showBatch=true; state.batchRows=[blankBatchRow(),blankBatchRow(),blankBatchRow()]; state.batchSaving=false; render(); }
+  else if(act==='close-batch'){ closeBatch(); }
+  else if(act==='batch-add-row'){ state.batchRows.push(blankBatchRow()); render(); }
+  else if(act==='batch-add-5'){ for(let k=0;k<5;k++) state.batchRows.push(blankBatchRow()); render(); }
+  else if(act==='batch-del-row'){
+    const rid = el.dataset.rid;
+    state.batchRows = state.batchRows.filter(r=>r.rid!==rid);
+    if(!state.batchRows.length) state.batchRows.push(blankBatchRow());
+    render();
+  }
+  else if(act==='batch-paste'){ batchPasteFromClipboard(); }
+  else if(act==='batch-save'){ batchSave(); }
   else if(act==='export'){ exportCsv(); }
   else if(act==='migrate'){ migrateFromClaude(); }
 });
@@ -1286,11 +1447,90 @@ document.addEventListener('keydown', e => {
   if(e.key!=='Escape') return;
   if(state.datePop){ state.datePop=null; render(); }
   else if(state.showImport) closeImport();
+  else if(state.showBatch){ if(confirm('Discard this batch? Unsaved rows will be lost.')) closeBatch(); }
   else if(state.showForm) closeForm();
 });
 
 function closeForm(){ state.showForm=false; state.editingId=null; state.uploadError=''; render(); }
 function closeImport(){ state.showImport=false; state.importRows=[]; render(); }
+function closeBatch(){ state.showBatch=false; state.batchRows=[]; state.batchSaving=false; render(); }
+
+/* Paste a block from the sheet straight into the grid, filling blank rows
+   first then appending. Reuses the same clipboard parser as Import. */
+async function batchPasteFromClipboard(){
+  let rows = [];
+  try{
+    const items = await navigator.clipboard.read();
+    for(const it of items){
+      if(it.types.includes('text/html')){
+        const blob = await it.getType('text/html');
+        const html = await blob.text();
+        if(/<table/i.test(html)) rows = parseHtmlTable(html);
+      }
+    }
+    if(!rows.length){
+      const txt = await navigator.clipboard.readText();
+      rows = txt.split(/\r?\n/).filter(l=>l.length).map(l=>l.split('\t'));
+    }
+  }catch(err){
+    alert('Couldn’t read the clipboard automatically. Use the Import button instead, or paste directly into the first cell.');
+    return;
+  }
+  if(rows.length && /customer/i.test(rows[0][0]||'')) rows.shift();
+  rows = rows.filter(r => r.some(c => (c||'').trim()));
+  if(!rows.length) return;
+  const mapped = rows.map(cols => {
+    const r = blankBatchRow();
+    r.customer=(cols[0]||'').trim();
+    r.container=(cols[1]||'').trim().toUpperCase();
+    r.size=(cols[2]||"40'HQ").trim();
+    const dt=(cols[3]||'').trim();
+    r.date = toISO(dt); r.time = timePart(dt);
+    if(!r.date && /\d{4}-\d{2}-\d{2}/.test(dt)) r.date = dt.match(/\d{4}-\d{2}-\d{2}/)[0];
+    r.cartons=(cols[4]||'').trim();
+    r.type=(cols[5]||'').toLowerCase().includes('drop')?'drop':'live';
+    r.skus=(cols[6]||'').trim();
+    r.note=(cols[7]||'').trim();
+    r.status=normalizeStatus(cols[8], ENTITIES.inbound.statusOrder);
+    r.forwarder=(cols[9]||'').trim();
+    return r;
+  });
+  // drop the empty starter rows, then use the pasted rows
+  const existing = state.batchRows.filter(batchRowFilled);
+  state.batchRows = existing.concat(mapped);
+  render();
+}
+
+async function batchSave(){
+  const im = ENTITIES.inbound;
+  const toSave = state.batchRows.filter(batchRowFilled).map(r => {
+    const base = fromISO(r.date);
+    const scheduled = base ? (r.time.trim() ? `${base} ${r.time.trim()}` : base) : '';
+    return {
+      id: uid(),
+      customer: r.customer.trim(),
+      container: r.container.trim().toUpperCase(),
+      size: r.size,
+      scheduled,
+      cartons: r.cartons.trim(),
+      type: r.type,
+      skus: r.skus.trim(),
+      note: r.note.trim(),
+      status: im.statusOrder.includes(r.status) ? r.status : im.statusOrder[0],
+      forwarder: r.forwarder.trim(),
+      attachments: [],
+    };
+  });
+  if(!toSave.length) return;
+  state.batchSaving = true; render();
+  try{
+    await bulkCreate('inbound', toSave);
+    closeBatch();
+  }catch(err){
+    state.batchSaving = false; render();
+    alert('Couldn’t save the batch. Check your connection and try again.');
+  }
+}
 
 async function saveForm(){
   const c = cfg();
