@@ -288,8 +288,8 @@ table.grid{width:100%;border-collapse:collapse;background:var(--card);border-rad
 .import-more{font-size:14px;color:var(--ink-soft);padding:10px 11px;font-weight:600;}
 
 /* ============ Batch grid modal ============ */
-.modal.wide{width:min(96vw,1180px);max-width:96vw;}
-.batch-scroll{overflow:auto;border:1.5px solid var(--line);border-radius:11px;max-height:60vh;}
+.modal.wide{width:98vw;max-width:1500px;}
+.batch-scroll{overflow:auto;border:1.5px solid var(--line);border-radius:11px;max-height:62vh;}
 table.batch{border-collapse:collapse;width:100%;font-size:14px;background:var(--surface,#fff);}
 .batch thead th{position:sticky;top:0;z-index:2;background:#faf9f5;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-soft);font-weight:800;padding:9px 8px;border-bottom:1.5px solid var(--line);white-space:nowrap;}
 .batch thead th.rownum{width:34px;text-align:center;}
@@ -305,9 +305,17 @@ table.batch{border-collapse:collapse;width:100%;font-size:14px;background:var(--
 .batch input.mono{font-family:'JetBrains Mono',monospace;font-weight:700;letter-spacing:.03em;}
 .batch .rowdel{border:none;background:transparent;color:var(--ink-soft);cursor:pointer;padding:6px;border-radius:6px;display:inline-flex;}
 .batch .rowdel:hover{background:var(--rose-bg);color:var(--rose);}
-.batch-col-cust{min-width:150px;}
-.batch-col-num{min-width:150px;}
-.batch-col-note{min-width:180px;}
+.batch-col-cust{min-width:160px;}
+.batch-col-num{min-width:165px;}
+.batch-col-size{min-width:90px;}
+.batch-col-date{min-width:160px;}
+.batch-col-time{min-width:130px;}
+.batch-col-cartons{min-width:95px;}
+.batch-col-type{min-width:85px;}
+.batch-col-skus{min-width:80px;}
+.batch-col-status{min-width:120px;}
+.batch-col-note{min-width:200px;}
+.batch-col-tag{min-width:140px;}
 .batch-foot-left{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
 
 ::placeholder{color:#a5a094;font-weight:500;}
@@ -1173,15 +1181,15 @@ function batchHtml(){
               <th class="rownum">#</th>
               <th class="batch-col-cust">Customer</th>
               <th class="batch-col-num">Container #</th>
-              <th>Size</th>
-              <th>Delivery date</th>
-              <th>Time / window</th>
-              <th>Cartons</th>
-              <th>Type</th>
-              <th>SKUs</th>
-              <th>Status</th>
+              <th class="batch-col-size">Size</th>
+              <th class="batch-col-date">Delivery date</th>
+              <th class="batch-col-time">Time / window</th>
+              <th class="batch-col-cartons">Cartons</th>
+              <th class="batch-col-type">Type</th>
+              <th class="batch-col-skus">SKUs</th>
+              <th class="batch-col-status">Status</th>
               <th class="batch-col-note">Note</th>
-              <th>Tag</th>
+              <th class="batch-col-tag">Tag</th>
               <th></th>
             </tr></thead>
             <tbody>
