@@ -318,6 +318,35 @@ table.batch{border-collapse:collapse;width:100%;font-size:14px;background:var(--
 .batch-col-tag{min-width:140px;}
 .batch-foot-left{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
 
+/* Outbound voice — inbound forms do not use these. */
+.voice-wrap{position:sticky;top:0;z-index:3;background:#fff;margin:0 0 12px;padding-bottom:2px;}
+.voice-bar{display:flex;gap:8px;align-items:stretch;}
+.mic-btn{
+  flex:1;min-height:76px;border:none;border-radius:14px;background:var(--navy);color:#fff;
+  font-size:18px;font-weight:800;display:flex;align-items:center;justify-content:center;gap:10px;
+  cursor:pointer;padding:14px 16px;
+}
+.mic-btn.is-listening{background:var(--rose);box-shadow:0 0 0 4px var(--rose-bg);}
+.voice-lang{
+  width:112px;flex:0 0 112px;border:1.5px solid var(--line-2);border-radius:14px;background:#fff;
+  color:var(--navy);font-family:'Archivo',sans-serif;font-size:15px;font-weight:800;padding:8px 6px;
+}
+.voice-sub{font-size:13px;color:var(--ink-soft);font-weight:600;margin:8px 2px 0;line-height:1.35;}
+.voice-msg{background:var(--rust-bg);color:#8a4b12;border-radius:14px;padding:14px 14px;font-weight:700;font-size:15.5px;line-height:1.4;margin-bottom:10px;}
+.heard{margin-top:10px;background:#fbfaf7;border:1.5px solid var(--line);border-radius:12px;padding:8px 12px;}
+.heard summary{font-weight:800;font-size:12.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-soft);cursor:pointer;}
+.heard p{margin:8px 0 2px;font-size:15px;line-height:1.4;max-height:72px;overflow:auto;}
+.voice-badge{display:inline-block;margin-left:8px;background:var(--teal-bg);color:var(--teal);font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;padding:2px 7px;border-radius:6px;vertical-align:middle;}
+.field.voice-filled input,.field.voice-filled textarea,.field.voice-filled select{box-shadow:inset 4px 0 0 var(--teal);background:#f3faf8;}
+.field.voice-filled .seg{box-shadow:inset 4px 0 0 var(--teal);}
+.field.voice-check input,.field.voice-check textarea,.field.voice-check select,.field.voice-check .seg{
+  outline:2.5px solid var(--signal);outline-offset:1px;border-color:var(--signal);
+}
+.field.voice-check input:focus,.field.voice-check textarea:focus,.field.voice-check select:focus{
+  outline:2.5px solid var(--signal);border-color:var(--signal);
+}
+.voice-hint{margin-top:6px;font-size:13.5px;font-weight:800;color:#9a5a10;}
+
 ::placeholder{color:#a5a094;font-weight:500;}
 @media(max-width:1000px){.board{grid-template-columns:repeat(2,1fr);}}
 @media(max-width:700px){
@@ -330,6 +359,7 @@ table.batch{border-collapse:collapse;width:100%;font-size:14px;background:var(--
   .row2{flex-direction:column;}
   .bar-row .bl{width:110px;font-size:14px;}
   .cnum{font-size:19px;}
+  .panel.outbound-panel{width:100%;max-width:100%;}
 }
 </style>
 </head>
@@ -344,6 +374,7 @@ import {
 import {
   getStorage, ref, uploadBytes, getDownloadURL, deleteObject
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
+import { parseOutboundTranscript } from "./outbound-voice.js";
 
 /* ================= Firebase ================= */
 const firebaseConfig = {
@@ -354,9 +385,18 @@ const firebaseConfig = {
   messagingSenderId: "310403363155",
   appId: "1:310403363155:web:c7d58b565ab6aa606971a6"
 };
-const fbApp = initializeApp(firebaseConfig);
-const db = getFirestore(fbApp);
-const storageRef = getStorage(fbApp);
+/* ?voiceDemo=1 on localhost stubs Firebase so screenshots and parser
+   checks never touch the live project. Production loads never set this. */
+const demoQuery = new URLSearchParams(location.search);
+const voiceDemo = demoQuery.has('voiceDemo')
+  && /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
+let db = null;
+let storageRef = null;
+if (!voiceDemo) {
+  const fbApp = initializeApp(firebaseConfig);
+  db = getFirestore(fbApp);
+  storageRef = getStorage(fbApp);
+}
 
 /* ================= entity config =================
    Everything that differs between Inbound and Outbound lives here.
@@ -441,6 +481,12 @@ let state = {
   syncError:'',
   migrating:false,
   migrateMsg:'',
+  demo:false,
+  formDraft:null,
+  voice:{
+    listening:false, interim:'', finalText:'', transcript:'', heardOpen:false,
+    message:'', forceUnsupported:false, demoMic:false, filled:{}, ambiguous:{},
+  },
 };
 function list(){ return state[state.mode]; }
 function loaded(){ return state.mode==='inbound' ? state.loadedInbound : state.loadedOutbound; }
@@ -529,17 +575,21 @@ function startSync(){
   }, err => { state.loadedOutbound = true; state.syncError = err.message || 'Could not connect to the database.'; render(); });
 }
 async function createRecord(mode, data){
+  if (!db) { alert('Demo mode does not save.'); return 'demo'; }
   const id = uid();
   await setDoc(doc(db, ENTITIES[mode].collection, id), {...data, attachments:[]});
   return id;
 }
 async function patchRecord(mode, id, patch){
+  if (!db) return;
   await updateDoc(doc(db, ENTITIES[mode].collection, id), patch);
 }
 async function removeRecord(mode, id){
+  if (!db) return;
   await deleteDoc(doc(db, ENTITIES[mode].collection, id));
 }
 async function bulkCreate(mode, records){
+  if (!db) { alert('Demo mode does not save.'); return; }
   const c = ENTITIES[mode].collection;
   for(let i=0;i<records.length;i+=400){
     const chunk = records.slice(i,i+400);
@@ -551,6 +601,7 @@ async function bulkCreate(mode, records){
 
 /* ================= Storage (attachments) ================= */
 async function uploadAttachment(mode, recordId, file){
+  if (!storageRef) throw new Error('Demo mode');
   const aid = uid();
   const path = `attachments/${mode}/${recordId}/${aid}_${file.name}`;
   const sref = ref(storageRef, path);
@@ -686,6 +737,7 @@ function icon(n,s=17){
     camera:'<path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>',
     image:'<rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/>',
     table:'<rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/>',
+    mic:'<path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>',
   }[n]||'';
   return `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
 }
@@ -703,7 +755,7 @@ function headerHtml(){
     <div class="hdr-top">
       <div class="logo"><span class="mark">▦</span>MANIFEST</div>
       <div class="hdr-date">${ds.toUpperCase()}</div>
-      <span class="sync-dot ${state.syncError?'err':''}"><i></i>${state.syncError?'Offline':'Live'}</span>
+      <span class="sync-dot ${state.syncError?'err':''}"><i></i>${state.demo?'Demo':state.syncError?'Offline':'Live'}</span>
       <div class="hdr-spacer"></div>
       <div class="hdr-stats">
         <div class="hstat"><div class="v">${active}</div><div class="l">Active</div></div>
@@ -1018,41 +1070,54 @@ function formHtml(){
   const c = cfg();
   const editing = state.editingId ? list().find(x=>x.id===state.editingId) : null;
   const v = editing || {customer:'', [c.numberField]:'', [c.extraField]:(c.extraOptions?c.extraOptions[2]:''), [c.dateField]:'', cartons:'', skus:'', note:'', status:c.statusOrder[0], [c.tagField]:'', attachments:[]};
+  const d = state.mode==='outbound' ? state.formDraft : null;
+  const customerVal = d ? d.customer : v.customer;
+  const numberVal = d ? d.reference : numOf(v);
+  const dateVal = d ? d.shipDate : toISO(dateOf(v));
+  const timeVal = d ? d.time : timePart(dateOf(v));
+  const cartonsVal = d ? d.cartons : v.cartons;
+  const skusVal = d ? d.skus : v.skus;
+  const statusVal = d ? d.status : v.status;
+  const noteVal = d ? d.note : v.note;
+  const tagVal = d ? d.tag : tagOf(v);
+  const extraVal = d ? d.carrier : (extraOf(v)||'');
   const extraFieldHtml = c.extraOptions
     ? `<select id="f_extra">${c.extraOptions.map(s=>`<option ${extraOf(v)===s?'selected':''}>${s}</option>`).join('')}</select>`
-    : `<input type="text" id="f_extra" value="${esc(extraOf(v)||'')}" placeholder="${c.extraPlaceholder||''}">`;
+    : `<input type="text" id="f_extra" value="${esc(extraVal)}" placeholder="${c.extraPlaceholder||''}">`;
   return `
   <div class="overlay" id="formOverlay">
-    <div class="panel">
+    <div class="panel${state.mode==='outbound'?' outbound-panel':''}">
       <div class="panel-h">
         <h2>${editing?`Edit ${c.plural.replace(/s$/,'')}`:`New ${c.plural.replace(/s$/,'')}`}</h2>
         <button class="icon-btn" data-action="close-form">${icon('x',20)}</button>
       </div>
       <div class="panel-b">
-        <div class="field"><label>Customer</label><input type="text" id="f_customer" value="${esc(v.customer)}" placeholder="e.g. Allsetthealth"></div>
+        ${state.mode==='outbound' ? voiceBarHtml() : ''}
+        <div class="field${voiceClass('customer')}"><label>Customer${voiceBadge('customer')}</label><input type="text" id="f_customer" value="${esc(customerVal)}" placeholder="e.g. Allsetthealth">${voiceHint('customer')}</div>
         <div class="row2">
-          <div class="field"><label>${c.numberLabel}</label><input type="text" id="f_number" value="${esc(numOf(v))}" placeholder="${c.numberPlaceholder}" style="font-family:'JetBrains Mono',monospace;font-weight:700;letter-spacing:.04em;"></div>
-          <div class="field"><label>${c.extraLabel}</label>${extraFieldHtml}</div>
+          <div class="field${voiceClass('reference')}"><label>${c.numberLabel}${voiceBadge('reference')}</label><input type="text" id="f_number" value="${esc(numberVal)}" placeholder="${c.numberPlaceholder}" style="font-family:'JetBrains Mono',monospace;font-weight:700;letter-spacing:.04em;">${voiceHint('reference')}</div>
+          <div class="field${voiceClass('carrier')}"><label>${c.extraLabel}${voiceBadge('carrier')}</label>${extraFieldHtml}${voiceHint('carrier')}</div>
         </div>
         <div class="row2">
-          <div class="field"><label>${c.dateLabel}</label><input type="date" id="f_date" value="${toISO(dateOf(v))}"></div>
-          <div class="field"><label>Time / window</label><input type="text" id="f_time" value="${esc(timePart(dateOf(v)))}" placeholder="11:00 AM or 1-2pm"></div>
+          <div class="field${voiceClass('shipDate')}"><label>${c.dateLabel}${voiceBadge('shipDate')}</label><input type="date" id="f_date" value="${esc(dateVal)}">${voiceHint('shipDate')}</div>
+          <div class="field"><label>Time / window</label><input type="text" id="f_time" value="${esc(timeVal)}" placeholder="11:00 AM or 1-2pm"></div>
         </div>
         <div class="row2">
-          <div class="field"><label>Cartons / Pallets</label><input type="text" id="f_cartons" value="${esc(v.cartons)}" placeholder="e.g. 1452 or 20 plts"></div>
-          <div class="field"><label>${c.methodLabel}</label>
+          <div class="field${voiceClass('cartons')}"><label>Cartons / Pallets${voiceBadge('cartons')}</label><input type="text" id="f_cartons" value="${esc(cartonsVal)}" placeholder="e.g. 1452 or 20 plts">${voiceHint('cartons')}</div>
+          <div class="field${voiceClass('method')}"><label>${c.methodLabel}${voiceBadge('method')}</label>
             <div class="seg">
               <button type="button" class="${state.formMethod===c.methodOptions[0][0]?'on-a':''}" data-action="form-method" data-v="${c.methodOptions[0][0]}">${c.methodOptions[0][1]}</button>
               <button type="button" class="${state.formMethod===c.methodOptions[1][0]?'on-b':''}" data-action="form-method" data-v="${c.methodOptions[1][0]}">${c.methodOptions[1][1]}</button>
             </div>
+            ${voiceHint('method')}
           </div>
         </div>
         <div class="row2">
-          <div class="field"><label>SKUs</label><input type="text" id="f_skus" value="${esc(v.skus)}" placeholder="e.g. 13"></div>
-          <div class="field"><label>Status</label><select id="f_status">${c.statusOrder.map(s=>`<option value="${s}" ${v.status===s?'selected':''}>${c.statusMeta[s].label}</option>`).join('')}</select></div>
+          <div class="field${voiceClass('skus')}"><label>SKUs${voiceBadge('skus')}</label><input type="text" id="f_skus" value="${esc(skusVal)}" placeholder="e.g. 13">${voiceHint('skus')}</div>
+          <div class="field"><label>Status</label><select id="f_status">${c.statusOrder.map(s=>`<option value="${s}" ${statusVal===s?'selected':''}>${c.statusMeta[s].label}</option>`).join('')}</select></div>
         </div>
-        <div class="field"><label>Note</label><textarea id="f_note" placeholder="e.g. Sort by FBA ID, unload/relabel/reload…">${esc(v.note)}</textarea></div>
-        <div class="field"><label>${c.tagLabel}</label><input type="text" id="f_tag" value="${esc(tagOf(v))}" placeholder="${c.tagPlaceholder}"></div>
+        <div class="field${voiceClass('note')}"><label>Note${voiceBadge('note')}</label><textarea id="f_note" placeholder="e.g. Sort by FBA ID, unload/relabel/reload…">${esc(noteVal)}</textarea>${voiceHint('note')}</div>
+        <div class="field${voiceClass('tag')}"><label>${c.tagLabel}${voiceBadge('tag')}</label><input type="text" id="f_tag" value="${esc(tagVal)}" placeholder="${c.tagPlaceholder}">${voiceHint('tag')}</div>
 
         <div class="field">
           <label>Attachments</label>
@@ -1232,8 +1297,231 @@ function batchHtml(){
   </div>`;
 }
 
+/* ================= outbound voice =================
+   SpeechRecognition only. The transcript is never written to Firestore.
+   Inbound forms do not render this UI. */
+const VOICE_LANG_KEY = 'manifest-voice-lang';
+let activeRec = null;
+let skipCapture = false;
+
+function freshVoice(keepDemo){
+  return {
+    listening:false, interim:'', finalText:'', transcript:'', heardOpen:false,
+    message:'', forceUnsupported:false, demoMic: !!keepDemo, filled:{}, ambiguous:{},
+  };
+}
+function voiceLang(){
+  try{
+    const v = localStorage.getItem(VOICE_LANG_KEY);
+    if(v==='en-US' || v==='es-US' || v==='zh-CN') return v;
+  }catch(e){}
+  return 'en-US';
+}
+function setVoiceLang(v){
+  if(v!=='en-US' && v!=='es-US' && v!=='zh-CN') return;
+  try{ localStorage.setItem(VOICE_LANG_KEY, v); }catch(e){}
+}
+function voiceClass(key){
+  if(state.mode!=='outbound' || !state.voice) return '';
+  if(state.voice.filled[key]) return ' voice-filled';
+  if(state.voice.ambiguous[key]) return ' voice-check';
+  return '';
+}
+function voiceBadge(key){
+  if(state.mode!=='outbound' || !state.voice || !state.voice.filled[key]) return '';
+  return '<span class="voice-badge">Voice</span>';
+}
+function voiceHint(key){
+  if(state.mode!=='outbound' || !state.voice || !state.voice.ambiguous[key]) return '';
+  return '<div class="voice-hint">Please check</div>';
+}
+function voiceApiMissing(){
+  return !(window.SpeechRecognition || window.webkitSpeechRecognition);
+}
+function voiceUnavailable(){
+  if(state.voice.forceUnsupported) return true;
+  if(state.voice.demoMic) return false;
+  return voiceApiMissing();
+}
+function voiceMessageText(){
+  const code = state.voice.message || (voiceUnavailable() ? 'unsupported' : '');
+  if(code==='unsupported') return 'Voice input isn\u2019t available in this browser. Type the shipment below \u2014 that still works.';
+  if(code==='denied') return 'Microphone permission is off. Allow the mic in your browser settings, or type the shipment below.';
+  if(code==='nospeech') return 'Didn\u2019t catch that. Tap the mic and try again, or type the shipment.';
+  if(code==='error') return 'Voice didn\u2019t work this time. You can type the shipment below, or tap the mic to try again.';
+  return '';
+}
+function voiceBarHtml(){
+  const msg = voiceMessageText();
+  const unsupported = voiceUnavailable();
+  const lang = voiceLang();
+  const listening = !!state.voice.listening;
+  const heard = (listening ? [state.voice.finalText, state.voice.interim] : [state.voice.transcript]).filter(Boolean).join(' ').trim();
+  const showHeard = !!(heard || listening);
+  const mic = unsupported ? '' : `
+    <div class="voice-bar">
+      <button type="button" class="mic-btn${listening?' is-listening':''}" id="voiceMic" data-action="voice-mic" aria-pressed="${listening?'true':'false'}" aria-label="${listening?'Stop listening':'Tap to speak a shipment'}">
+        ${icon('mic',26)}<span id="voiceMicLabel">${listening?'Listening\u2026 tap to stop':'Tap to speak'}</span>
+      </button>
+      <select id="voiceLang" class="voice-lang" aria-label="Voice language">
+        <option value="en-US" ${lang==='en-US'?'selected':''}>English</option>
+        <option value="es-US" ${lang==='es-US'?'selected':''}>Espa\u00f1ol</option>
+        <option value="zh-CN" ${lang==='zh-CN'?'selected':''}>\u4e2d\u6587</option>
+      </select>
+    </div>
+    <div class="voice-sub">English, Espa\u00f1ol, or \u4e2d\u6587 \u2014 one language at a time. Review, then tap Save.</div>`;
+  return `<div class="voice-wrap">
+    ${msg?`<div class="voice-msg" role="status">${esc(msg)}</div>`:''}
+    ${mic}
+    ${showHeard?`<details class="heard" id="voiceHeard" ${state.voice.heardOpen||listening?'open':''}>
+      <summary>What I heard</summary>
+      <p id="voiceHeardText">${esc(heard || '\u2026')}</p>
+    </details>`:''}
+  </div>`;
+}
+function knownCustomers(){
+  const names = [];
+  for(const row of state.inbound) if(row && row.customer) names.push(row.customer);
+  for(const row of state.outbound) if(row && row.customer) names.push(row.customer);
+  return names;
+}
+function blankOutboundDraft(){
+  return {customer:'', reference:'', shipDate:'', time:'', carrier:'', cartons:'', skus:'', status:'scheduled', note:'', tag:''};
+}
+function captureOutboundDraft(){
+  if(state.mode!=='outbound' || !state.showForm) return;
+  const customer = document.getElementById('f_customer');
+  if(!customer) return;
+  const g = id => (document.getElementById(id)||{}).value || '';
+  state.formDraft = {
+    customer:g('f_customer'), reference:g('f_number'), shipDate:g('f_date'), time:g('f_time'),
+    carrier:g('f_extra'), cartons:g('f_cartons'), skus:g('f_skus'), status:g('f_status') || 'scheduled',
+    note:g('f_note'), tag:g('f_tag'),
+  };
+}
+function applyVoiceToState(text){
+  if(!state.formDraft) state.formDraft = blankOutboundDraft();
+  const parsed = parseOutboundTranscript(text, {customers: knownCustomers(), now: new Date()});
+  const draftKey = {customer:'customer', reference:'reference', shipDate:'shipDate', carrier:'carrier', cartons:'cartons', skus:'skus', note:'note', tag:'tag'};
+  for(const key of ['customer','reference','shipDate','method','carrier','cartons','skus','note','tag']){
+    if(parsed.ambiguous.includes(key)){
+      state.voice.ambiguous[key] = true;
+      delete state.voice.filled[key];
+    }else if(parsed.filled.includes(key)){
+      state.voice.filled[key] = true;
+      delete state.voice.ambiguous[key];
+      if(key==='method') state.formMethod = parsed.fields.method;
+      else state.formDraft[draftKey[key]] = parsed.fields[key];
+    }
+  }
+  state.voice.transcript = text;
+  state.voice.interim = '';
+  state.voice.finalText = '';
+  state.voice.heardOpen = true;
+  state.voice.listening = false;
+  state.voice.message = '';
+}
+function applyVoiceTranscript(text){
+  captureOutboundDraft();
+  applyVoiceToState(text);
+  skipCapture = true;
+  render();
+}
+function stopVoice(apply){
+  const rec = activeRec;
+  state.voice.listening = false;
+  if(!rec) return;
+  if(!apply){
+    rec.onend = null; rec.onresult = null; rec.onerror = null;
+  }
+  try{ rec.stop(); }catch(e){}
+  if(!apply) activeRec = null;
+}
+function startVoice(){
+  if(state.mode!=='outbound') return;
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if(!SR || state.voice.forceUnsupported){
+    state.voice.forceUnsupported = true;
+    state.voice.message = 'unsupported';
+    state.voice.demoMic = false;
+    state.voice.listening = false;
+    render();
+    return;
+  }
+  stopVoice(false);
+  state.voice.listening = true;
+  state.voice.message = '';
+  state.voice.interim = '';
+  state.voice.finalText = '';
+  state.voice.heardOpen = true;
+  render();
+  const rec = new SR();
+  rec.lang = voiceLang();
+  try{ rec.continuous = true; }catch(e){}
+  try{ rec.interimResults = true; }catch(e){}
+  rec.onresult = (event) => {
+    let finalText = '', interim = '';
+    for(const res of event.results){
+      const chunk = res[0] && res[0].transcript ? res[0].transcript : '';
+      if(res.isFinal) finalText += chunk + ' ';
+      else interim += chunk;
+    }
+    state.voice.finalText = finalText.trim();
+    state.voice.interim = interim;
+    const heard = document.getElementById('voiceHeardText');
+    const details = document.getElementById('voiceHeard');
+    if(details) details.open = true;
+    if(heard) heard.textContent = [state.voice.finalText, state.voice.interim].filter(Boolean).join(' ').trim() || '\u2026';
+  };
+  rec.onerror = (ev) => {
+    const code = ev && ev.error;
+    if(code==='not-allowed' || code==='service-not-allowed'){
+      state.voice.message = 'denied';
+      state.voice.listening = false;
+      rec.onend = null;
+      try{ rec.stop(); }catch(e){}
+      activeRec = null;
+      render();
+    }else if(code==='no-speech'){
+      state.voice.message = 'nospeech';
+    }else if(code!=='aborted'){
+      state.voice.message = 'error';
+    }
+  };
+  rec.onend = () => {
+    activeRec = null;
+    const text = [state.voice.finalText, state.voice.interim].filter(Boolean).join(' ').trim();
+    state.voice.listening = false;
+    if(text) applyVoiceTranscript(text);
+    else {
+      if(!state.voice.message) state.voice.message = 'nospeech';
+      render();
+    }
+  };
+  try{
+    rec.start();
+    activeRec = rec;
+  }catch(e){
+    state.voice.listening = false;
+    state.voice.message = 'error';
+    activeRec = null;
+    render();
+  }
+}
+function toggleVoice(){
+  if(state.voice.listening) stopVoice(true);
+  else startVoice();
+}
+function resetVoiceForForm(){
+  stopVoice(false);
+  state.formDraft = null;
+  state.voice = freshVoice(voiceDemo);
+}
+
 /* ================= render ================= */
 function render(){
+  if(!skipCapture && state.showForm && state.mode==='outbound') captureOutboundDraft();
+  skipCapture = false;
   const l = getFiltered();
   let body;
   if(!loaded()) body = '<div class="empty"><h3>Connecting…</h3></div>';
@@ -1269,6 +1557,8 @@ function wireInputs(){
   if(ph) ph.onchange = e => handleFiles(e.target.files);
   const pd = document.getElementById('popDate');
   if(pd) pd.focus();
+  const lang = document.getElementById('voiceLang');
+  if(lang) lang.onchange = e => setVoiceLang(e.target.value);
 
   // Batch grid: mutate state.batchRows in place on every edit, WITHOUT
   // re-rendering — that keeps the caret where the user is typing. The
@@ -1353,9 +1643,11 @@ document.addEventListener('click', e => {
   const act = el.dataset.action, id = el.dataset.id, v = el.dataset.v;
 
   if(act==='set-mode'){
+    stopVoice(false);
     state.mode=v; state.statusFilter='active'; state.methodFilter='all'; state.search='';
     state.sort={key:'date',dir:1}; state.showForm=false; state.editingId=null; state.showImport=false;
-    render();
+    state.formDraft=null; state.voice=freshVoice(voiceDemo);
+    skipCapture=true; render();
   }
   else if(act==='set-view'){ state.view=v; render(); }
   else if(act==='set-status'){ state.statusFilter=v; render(); }
@@ -1363,10 +1655,16 @@ document.addEventListener('click', e => {
     if(state.sort.key===v) state.sort.dir*=-1; else state.sort={key:v,dir:1};
     render();
   }
-  else if(act==='new'){ state.showForm=true; state.editingId=null; state.formMethod=cfg().methodOptions[0][0]; state.uploadError=''; render(); }
+  else if(act==='new'){
+    resetVoiceForForm();
+    state.showForm=true; state.editingId=null; state.formMethod=cfg().methodOptions[0][0]; state.uploadError='';
+    skipCapture=true; render();
+  }
   else if(act==='edit'){
     const r = list().find(x=>x.id===id);
-    state.editingId=id; state.formMethod=r?methodOf(r):cfg().methodOptions[0][0]; state.showForm=true; state.uploadError=''; render();
+    resetVoiceForForm();
+    state.editingId=id; state.formMethod=r?methodOf(r):cfg().methodOptions[0][0]; state.showForm=true; state.uploadError='';
+    skipCapture=true; render();
   }
   else if(act==='open-date'){
     e.stopPropagation();
@@ -1417,6 +1715,7 @@ document.addEventListener('click', e => {
     el.className = v===cfg().methodOptions[0][0] ? 'on-a' : 'on-b';
   }
   else if(act==='close-form'){ closeForm(); }
+  else if(act==='voice-mic'){ e.preventDefault(); toggleVoice(); }
   else if(act==='save-form'){ saveForm(); }
   else if(act==='delete-from-form'){
     if(confirm(`Delete this ${cfg().plural.replace(/s$/,'')} and its files? This cannot be undone.`)){
@@ -1459,7 +1758,12 @@ document.addEventListener('keydown', e => {
   else if(state.showForm) closeForm();
 });
 
-function closeForm(){ state.showForm=false; state.editingId=null; state.uploadError=''; render(); }
+function closeForm(){
+  stopVoice(false);
+  state.showForm=false; state.editingId=null; state.uploadError='';
+  state.formDraft=null; state.voice=freshVoice(voiceDemo);
+  skipCapture=true; render();
+}
 function closeImport(){ state.showImport=false; state.importRows=[]; render(); }
 function closeBatch(){ state.showBatch=false; state.batchRows=[]; state.batchSaving=false; render(); }
 
@@ -1583,8 +1887,50 @@ function exportCsv(){
   URL.revokeObjectURL(a.href);
 }
 
-render();
-startSync();
+if(voiceDemo) bootVoiceDemo(demoQuery);
+else { render(); startSync(); }
+
+function bootVoiceDemo(q){
+  state.demo = true;
+  state.mode = 'outbound';
+  state.loadedInbound = true;
+  state.loadedOutbound = true;
+  state.syncError = '';
+  state.inbound = [
+    {id:'demo-in-1', customer:'Bright Harbor Goods', container:'DEMO100001', size:"40'HQ", scheduled:'11/12/2026', cartons:'80', type:'live', skus:'4', note:'Sample inbound row', status:'pending', forwarder:'Sample Forwarding', attachments:[]},
+  ];
+  state.outbound = [
+    {id:'demo-out-1', customer:'Northwind Trading', reference:'PO-10001', carrier:'Estes', shipDate:'11/12/2026', cartons:'10 pallets', method:'pickup', skus:'3', note:'Sample outbound row', status:'scheduled', tag:'BOL-1001', attachments:[]},
+    {id:'demo-out-2', customer:'Lumen Home Co', reference:'PO-10002', carrier:'Saia', shipDate:'11/18/2026', cartons:'6 cartons', method:'delivery', skus:'2', note:'', status:'staged', tag:'BOL-1002', attachments:[]},
+    {id:'demo-out-3', customer:'Costa Mesa Supply', reference:'55210', carrier:'Old Dominion', shipDate:'11/20/2026', cartons:'30 cartons', method:'pickup', skus:'8', note:'', status:'scheduled', tag:'', attachments:[]},
+    {id:'demo-out-4', customer:'Pacific Sample Works', reference:'PO-4400', carrier:'FedEx', shipDate:'11/21/2026', cartons:'2 pallets', method:'delivery', skus:'1', note:'', status:'loaded', tag:'BOL-4400', attachments:[]},
+  ];
+  state.showForm = true;
+  state.editingId = null;
+  state.formMethod = 'pickup';
+  state.formDraft = null;
+  state.voice = freshVoice(true);
+  const ui = q.get('voiceUi') || q.get('voiceDemo');
+  if(ui==='listening'){
+    state.voice.listening = true;
+    state.voice.interim = 'Customer Northwind Trading, twenty pallets';
+    state.voice.heardOpen = true;
+  }else if(ui==='unsupported'){
+    state.voice.forceUnsupported = true;
+    state.voice.message = 'unsupported';
+    state.voice.demoMic = false;
+  }else if(ui==='denied'){
+    state.voice.message = 'denied';
+  }
+  const say = q.get('say');
+  if(ui==='filled' || say){
+    const text = say || 'Customer Northwind Trading, PO 48213, ship tomorrow, pickup, 20 pallets, 12 cartons, 8 SKUs, BOL 2291, note Call the dock, carrier Estes or Saia';
+    applyVoiceToState(text);
+  }
+  window.__applyVoiceTranscript = (text) => applyVoiceTranscript(String(text||''));
+  skipCapture = true;
+  render();
+}
 </script>
 </body>
 </html>
