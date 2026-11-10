@@ -1,6 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseOutboundTranscript } from './outbound-voice.js';
+import {
+  parseOutboundTranscript,
+  collectSpeechTranscript,
+  createSpeechSession,
+  reduceSpeechSession,
+  describeVoiceError,
+} from './outbound-voice.js';
 
 const NOW = new Date(2026, 10, 10, 12, 0, 0); // Tue Nov 10, 2026
 const CUSTOMERS = [
@@ -323,4 +329,96 @@ test('filled and ambiguous never overlap, and ambiguous values are null', () => 
       assert.equal(result.ambiguous.includes(key), false);
     }
   }
+});
+
+function play(events) {
+  let session = createSpeechSession();
+  let last = { session, action: 'listen', text: '', code: '' };
+  for (const event of events) {
+    last = reduceSpeechSession(session, event);
+    session = last.session;
+  }
+  return last;
+}
+
+test('speech results keep interim text and drop duplicate finals', () => {
+  assert.equal(collectSpeechTranscript([]), '');
+  assert.equal(collectSpeechTranscript([{ transcript: 'twelve cartons', isFinal: false }]), 'twelve cartons');
+  assert.equal(collectSpeechTranscript([
+    { transcript: 'twenty pallets', isFinal: true },
+    { transcript: 'twenty pallets', isFinal: true },
+  ]), 'twenty pallets');
+  assert.equal(collectSpeechTranscript([
+    { transcript: 'hello', isFinal: true },
+    { transcript: 'hello world', isFinal: true },
+  ]), 'hello world');
+  assert.equal(collectSpeechTranscript([
+    { transcript: 'PO 48213', isFinal: true },
+    { transcript: 'tomorrow', isFinal: false },
+  ]), 'PO 48213 tomorrow');
+  assert.equal(collectSpeechTranscript([
+    { transcript: 'hello', isFinal: true },
+    { transcript: 'hello there', isFinal: false },
+  ]), 'hello there');
+});
+
+test('onend with only interim text still applies', () => {
+  const out = play([
+    { type: 'result', results: [{ transcript: 'Northwind twenty pallets', isFinal: false }] },
+    { type: 'end' },
+  ]);
+  assert.equal(out.action, 'apply');
+  assert.equal(out.text, 'Northwind twenty pallets');
+});
+
+test('onend before any result waits, then a late result applies', () => {
+  const waiting = play([{ type: 'end' }]);
+  assert.equal(waiting.action, 'wait');
+  assert.equal(waiting.text, '');
+  const late = reduceSpeechSession(waiting.session, {
+    type: 'result',
+    results: [{ transcript: 'BOL 2291', isFinal: true }],
+  });
+  assert.equal(late.action, 'apply');
+  assert.equal(late.text, 'BOL 2291');
+});
+
+test('onend with nothing, after the grace period, is no-speech', () => {
+  const out = play([{ type: 'end' }, { type: 'grace' }]);
+  assert.equal(out.action, 'message');
+  assert.equal(out.code, 'no-speech');
+});
+
+test('tap stop keeps the words already heard once the grace period ends', () => {
+  const out = play([
+    { type: 'result', results: [{ transcript: 'twelve cartons', isFinal: false }] },
+    { type: 'stop' },
+    { type: 'grace' },
+  ]);
+  assert.equal(out.action, 'apply');
+  assert.equal(out.text, 'twelve cartons');
+});
+
+test('speech errors map to a specific message and keep the raw code', () => {
+  const blocked = play([{ type: 'error', code: 'not-allowed' }]);
+  assert.equal(blocked.action, 'message');
+  assert.equal(blocked.code, 'not-allowed');
+
+  const offline = play([{ type: 'error', code: 'network' }]);
+  assert.equal(offline.action, 'message');
+  assert.equal(offline.code, 'network');
+
+  const siri = describeVoiceError('service-not-allowed', { ios: true });
+  assert.match(siri.text, /Dictation/);
+  assert.match(siri.text, /Siri/);
+  assert.equal(siri.code, 'service-not-allowed');
+
+  const other = describeVoiceError('service-not-allowed', { ios: false });
+  assert.equal(other.code, 'service-not-allowed');
+  assert.doesNotMatch(other.text, /Dictation/);
+
+  assert.match(describeVoiceError('network').text, /internet/i);
+  assert.match(describeVoiceError('not-allowed').text, /permission/i);
+  assert.match(describeVoiceError('no-speech').text, /Didn't catch/);
+  assert.equal(describeVoiceError('something-new').code, 'something-new');
 });

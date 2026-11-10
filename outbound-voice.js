@@ -1013,6 +1013,127 @@ function fuzzyCustomer(span, customers) {
   return null;
 }
 
+/**
+ * Join a SpeechRecognition result list into one transcript.
+ * Interim text counts — iOS often never sets isFinal.
+ * Consecutive duplicates and cumulative repeats ("hello" then "hello world")
+ * are collapsed so Android Chrome doesn't fill the form twice.
+ * @param {{ transcript?: string, isFinal?: boolean }[]} results
+ */
+export function collectSpeechTranscript(results) {
+  const finals = [];
+  let interim = '';
+  for (const raw of Array.isArray(results) ? results : []) {
+    const t = String(raw && raw.transcript || '').replace(/\s+/g, ' ').trim();
+    if (!t) continue;
+    if (raw.isFinal) {
+      const prev = finals[finals.length - 1];
+      if (prev && (t === prev || prev.startsWith(t))) continue;
+      if (prev && t.startsWith(prev)) finals[finals.length - 1] = t;
+      else finals.push(t);
+      interim = '';
+    } else {
+      interim = t;
+    }
+  }
+  if (interim) {
+    const prev = finals[finals.length - 1];
+    if (prev && (interim === prev || prev.startsWith(interim))) interim = '';
+    else if (prev && interim.startsWith(prev)) {
+      finals[finals.length - 1] = interim;
+      interim = '';
+    }
+  }
+  return [finals.join(' '), interim].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+}
+
+export function createSpeechSession() {
+  return {
+    results: [],
+    ended: false,
+    applied: false,
+    error: '',
+    stopRequested: false,
+    graceElapsed: false,
+  };
+}
+
+const FATAL_SPEECH_ERRORS = new Set([
+  'not-allowed', 'service-not-allowed', 'network', 'audio-capture', 'language-not-supported', 'insecure-context',
+]);
+
+/**
+ * One speech-session event. Actions:
+ * listen — keep the mic open (text is the live line)
+ * wait — onend/stop happened with nothing final yet; caller should wait briefly for a late result
+ * apply — fill the form with text (interim counts)
+ * message — show describeVoiceError(code)
+ * ignore — already finished, or an abort we discarded
+ */
+export function reduceSpeechSession(session, event) {
+  if (!session || session.applied) return { session, action: 'ignore', text: '', code: '' };
+  const next = {
+    results: session.results.slice(),
+    ended: session.ended,
+    applied: false,
+    error: session.error,
+    stopRequested: session.stopRequested,
+    graceElapsed: session.graceElapsed,
+  };
+  const type = event && event.type;
+  if (type === 'result') {
+    next.results = (event.results || []).map(r => ({
+      transcript: String(r && r.transcript || ''),
+      isFinal: !!(r && r.isFinal),
+    }));
+  } else if (type === 'end') next.ended = true;
+  else if (type === 'stop') next.stopRequested = true;
+  else if (type === 'grace') next.graceElapsed = true;
+  else if (type === 'error') {
+    const code = String(event.code || '');
+    if (code && code !== 'aborted') next.error = code;
+  } else {
+    return { session, action: 'listen', text: collectSpeechTranscript(session.results), code: '' };
+  }
+
+  const text = collectSpeechTranscript(next.results);
+  const fatal = FATAL_SPEECH_ERRORS.has(next.error);
+  if (text && (next.ended || next.graceElapsed || fatal)) {
+    next.applied = true;
+    return { session: next, action: 'apply', text, code: next.error };
+  }
+  if (fatal) {
+    next.applied = true;
+    return { session: next, action: 'message', text: '', code: next.error };
+  }
+  if ((next.ended || next.stopRequested) && !next.graceElapsed) {
+    return { session: next, action: 'wait', text, code: next.error };
+  }
+  if (next.graceElapsed && !text) {
+    next.applied = true;
+    return { session: next, action: 'message', text: '', code: next.error || 'no-speech' };
+  }
+  return { session: next, action: 'listen', text, code: next.error };
+}
+
+export function describeVoiceError(code, options = {}) {
+  const ios = !!(options && options.ios);
+  const known = {
+    'not-allowed': 'Microphone permission is off. Allow the mic for this site in the browser settings, then tap the mic again. You can also type the shipment below.',
+    'audio-capture': 'No microphone is available. Close other apps using the mic, or type the shipment below.',
+    'service-not-allowed': ios
+      ? 'Speech recognition is turned off on this iPhone. Turn on Siri (Settings → Siri & Search) and Dictation (Settings → General → Keyboard → Enable Dictation), then tap the mic again. You can also type the shipment below.'
+      : 'This browser blocked speech recognition. You can type the shipment below.',
+    'network': 'Voice needs an internet connection. Check the signal and tap the mic again, or type the shipment below.',
+    'no-speech': "Didn't catch any speech. Tap the mic and try again, or type the shipment.",
+    'language-not-supported': "This browser can't listen in that language. Try English, or type the shipment below.",
+    'not-supported': "Voice input isn't available in this browser. Type the shipment below — that still works.",
+    'insecure-context': 'Voice only works on a secure https page. Type the shipment below.',
+  };
+  const key = String(code || '');
+  return { text: known[key] || "Voice didn't work this time. You can type the shipment below, or tap the mic to try again.", code: key };
+}
+
 function levenshtein(a, b) {
   if (Math.abs(a.length - b.length) > 1) return 2;
   const m = a.length;

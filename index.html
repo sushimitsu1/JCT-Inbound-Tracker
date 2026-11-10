@@ -332,7 +332,11 @@ table.batch{border-collapse:collapse;width:100%;font-size:14px;background:var(--
   color:var(--navy);font-family:'Archivo',sans-serif;font-size:15px;font-weight:800;padding:8px 6px;
 }
 .voice-sub{font-size:13px;color:var(--ink-soft);font-weight:600;margin:8px 2px 0;line-height:1.35;}
+.voice-live{margin-top:8px;background:var(--rose-bg);color:var(--rose);border-radius:12px;padding:10px 12px;font-weight:800;font-size:15.5px;line-height:1.35;}
+.voice-live[hidden]{display:none;}
+.voice-live span{font-weight:700;color:var(--ink);}
 .voice-msg{background:var(--rust-bg);color:#8a4b12;border-radius:14px;padding:14px 14px;font-weight:700;font-size:15.5px;line-height:1.4;margin-bottom:10px;}
+.voice-code{display:block;margin-top:6px;font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:600;letter-spacing:.02em;}
 .heard{margin-top:10px;background:#fbfaf7;border:1.5px solid var(--line);border-radius:12px;padding:8px 12px;}
 .heard summary{font-weight:800;font-size:12.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-soft);cursor:pointer;}
 .heard p{margin:8px 0 2px;font-size:15px;line-height:1.4;max-height:72px;overflow:auto;}
@@ -374,7 +378,7 @@ import {
 import {
   getStorage, ref, uploadBytes, getDownloadURL, deleteObject
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
-import { parseOutboundTranscript } from "./outbound-voice.js";
+import { parseOutboundTranscript, createSpeechSession, reduceSpeechSession, describeVoiceError } from "./outbound-voice.js";
 
 /* ================= Firebase ================= */
 const firebaseConfig = {
@@ -484,8 +488,8 @@ let state = {
   demo:false,
   formDraft:null,
   voice:{
-    listening:false, interim:'', finalText:'', transcript:'', heardOpen:false,
-    message:'', forceUnsupported:false, demoMic:false, filled:{}, ambiguous:{},
+    listening:false, interim:'', finalText:'', transcript:'', liveText:'', heardOpen:false,
+    message:'', errorCode:'', forceUnsupported:false, demoMic:false, filled:{}, ambiguous:{},
   },
 };
 function list(){ return state[state.mode]; }
@@ -1306,9 +1310,14 @@ let skipCapture = false;
 
 function freshVoice(keepDemo){
   return {
-    listening:false, interim:'', finalText:'', transcript:'', heardOpen:false,
-    message:'', forceUnsupported:false, demoMic: !!keepDemo, filled:{}, ambiguous:{},
+    listening:false, interim:'', finalText:'', transcript:'', liveText:'', heardOpen:false,
+    message:'', errorCode:'', forceUnsupported:false, demoMic: !!keepDemo, filled:{}, ambiguous:{},
   };
+}
+function isIOSDevice(){
+  const ua = navigator.userAgent || '';
+  if(/iPad|iPhone|iPod/.test(ua)) return true;
+  return navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1;
 }
 function voiceLang(){
   try{
@@ -1343,21 +1352,24 @@ function voiceUnavailable(){
   if(state.voice.demoMic) return false;
   return voiceApiMissing();
 }
-function voiceMessageText(){
-  const code = state.voice.message || (voiceUnavailable() ? 'unsupported' : '');
-  if(code==='unsupported') return 'Voice input isn\u2019t available in this browser. Type the shipment below \u2014 that still works.';
-  if(code==='denied') return 'Microphone permission is off. Allow the mic in your browser settings, or type the shipment below.';
-  if(code==='nospeech') return 'Didn\u2019t catch that. Tap the mic and try again, or type the shipment.';
-  if(code==='error') return 'Voice didn\u2019t work this time. You can type the shipment below, or tap the mic to try again.';
-  return '';
+function voiceBannerHtml(){
+  let text = state.voice.message || '';
+  let code = state.voice.errorCode || '';
+  if(!text && voiceUnavailable()){
+    const d = describeVoiceError('not-supported', {ios: isIOSDevice()});
+    text = d.text;
+    code = d.code;
+  }
+  if(!text) return '';
+  return `<div class="voice-msg" role="status">${esc(text)}${code?`<span class="voice-code">${esc(code)}</span>`:''}</div>`;
 }
 function voiceBarHtml(){
-  const msg = voiceMessageText();
   const unsupported = voiceUnavailable();
   const lang = voiceLang();
   const listening = !!state.voice.listening;
-  const heard = (listening ? [state.voice.finalText, state.voice.interim] : [state.voice.transcript]).filter(Boolean).join(' ').trim();
-  const showHeard = !!(heard || listening);
+  const liveWords = state.voice.liveText || state.voice.interim || '';
+  const heard = (listening ? liveWords : state.voice.transcript) || '';
+  const showHeard = !!(state.voice.transcript) && !listening;
   const mic = unsupported ? '' : `
     <div class="voice-bar">
       <button type="button" class="mic-btn${listening?' is-listening':''}" id="voiceMic" data-action="voice-mic" aria-pressed="${listening?'true':'false'}" aria-label="${listening?'Stop listening':'Tap to speak a shipment'}">
@@ -1369,15 +1381,22 @@ function voiceBarHtml(){
         <option value="zh-CN" ${lang==='zh-CN'?'selected':''}>\u4e2d\u6587</option>
       </select>
     </div>
-    <div class="voice-sub">English, Espa\u00f1ol, or \u4e2d\u6587 \u2014 one language at a time. Review, then tap Save.</div>`;
+    <div class="voice-sub">Tap to start, talk, then tap again to stop. Review, then tap Save.</div>
+    <div class="voice-live" id="voiceLive" ${listening?'':'hidden'}>Listening\u2026 I hear: <span id="voiceLiveText">${esc(liveWords || '\u2026')}</span></div>`;
   return `<div class="voice-wrap">
-    ${msg?`<div class="voice-msg" role="status">${esc(msg)}</div>`:''}
+    ${voiceBannerHtml()}
     ${mic}
-    ${showHeard?`<details class="heard" id="voiceHeard" ${state.voice.heardOpen||listening?'open':''}>
+    ${showHeard?`<details class="heard" id="voiceHeard" ${state.voice.heardOpen?'open':''}>
       <summary>What I heard</summary>
-      <p id="voiceHeardText">${esc(heard || '\u2026')}</p>
+      <p id="voiceHeardText">${esc(heard)}</p>
     </details>`:''}
   </div>`;
+}
+function paintVoiceLive(){
+  const live = document.getElementById('voiceLive');
+  const text = document.getElementById('voiceLiveText');
+  if(live) live.hidden = !state.voice.listening;
+  if(text) text.textContent = state.voice.liveText || '\u2026';
 }
 function knownCustomers(){
   const names = [];
@@ -1417,9 +1436,11 @@ function applyVoiceToState(text){
   state.voice.transcript = text;
   state.voice.interim = '';
   state.voice.finalText = '';
+  state.voice.liveText = '';
   state.voice.heardOpen = true;
   state.voice.listening = false;
   state.voice.message = '';
+  state.voice.errorCode = '';
 }
 function applyVoiceTranscript(text){
   captureOutboundDraft();
@@ -1427,93 +1448,158 @@ function applyVoiceTranscript(text){
   skipCapture = true;
   render();
 }
-function stopVoice(apply){
+let speechGen = 0;
+let speechSession = createSpeechSession();
+let graceTimer = null;
+function clearGrace(){
+  if(graceTimer){ clearTimeout(graceTimer); graceTimer = null; }
+}
+function discardVoice(){
+  speechGen++;
+  clearGrace();
   const rec = activeRec;
-  state.voice.listening = false;
-  if(!rec) return;
-  if(!apply){
-    rec.onend = null; rec.onresult = null; rec.onerror = null;
+  activeRec = null;
+  if(rec){
+    rec.onresult = null; rec.onerror = null; rec.onend = null;
+    try{ rec.abort(); }catch(e){ try{ rec.stop(); }catch(e2){} }
   }
-  try{ rec.stop(); }catch(e){}
-  if(!apply) activeRec = null;
+  if(state.voice) state.voice.listening = false;
+}
+function handleSpeechAction(gen, out){
+  if(gen !== speechGen || !out) return;
+  const live = out.text || '';
+  if(live){
+    state.voice.liveText = live;
+    state.voice.interim = live;
+  }
+  if(out.action === 'listen'){
+    paintVoiceLive();
+    return;
+  }
+  if(out.action === 'wait'){
+    clearGrace();
+    graceTimer = setTimeout(() => {
+      graceTimer = null;
+      if(gen !== speechGen) return;
+      const next = reduceSpeechSession(speechSession, {type:'grace'});
+      speechSession = next.session;
+      handleSpeechAction(gen, next);
+    }, 800);
+    paintVoiceLive();
+    return;
+  }
+  if(out.action === 'apply'){
+    clearGrace();
+    state.voice.listening = false;
+    applyVoiceTranscript(out.text);
+    return;
+  }
+  if(out.action === 'message'){
+    clearGrace();
+    state.voice.listening = false;
+    const rec = activeRec;
+    activeRec = null;
+    if(rec){
+      rec.onresult = null; rec.onerror = null; rec.onend = null;
+      try{ rec.abort(); }catch(e){}
+    }
+    const described = describeVoiceError(out.code || 'no-speech', {ios: isIOSDevice()});
+    state.voice.message = described.text;
+    state.voice.errorCode = described.code;
+    if(live){ state.voice.transcript = live; state.voice.heardOpen = true; }
+    render();
+  }
+}
+function pushSpeechEvent(gen, event){
+  if(gen !== speechGen) return;
+  const out = reduceSpeechSession(speechSession, event);
+  speechSession = out.session;
+  handleSpeechAction(gen, out);
+}
+function requestStopVoice(){
+  const gen = speechGen;
+  const rec = activeRec;
+  pushSpeechEvent(gen, {type:'stop'});
+  try{ rec && rec.stop(); }catch(e){}
 }
 function startVoice(){
   if(state.mode!=='outbound') return;
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if(!SR || state.voice.forceUnsupported){
+    const d = describeVoiceError('not-supported', {ios: isIOSDevice()});
     state.voice.forceUnsupported = true;
-    state.voice.message = 'unsupported';
+    state.voice.message = d.text;
+    state.voice.errorCode = d.code;
     state.voice.demoMic = false;
     state.voice.listening = false;
     render();
     return;
   }
-  stopVoice(false);
-  state.voice.listening = true;
-  state.voice.message = '';
-  state.voice.interim = '';
-  state.voice.finalText = '';
-  state.voice.heardOpen = true;
-  render();
+  if(typeof window.isSecureContext === 'boolean' && !window.isSecureContext){
+    const d = describeVoiceError('insecure-context', {ios: isIOSDevice()});
+    state.voice.message = d.text;
+    state.voice.errorCode = d.code;
+    state.voice.listening = false;
+    render();
+    return;
+  }
+  // Drop any previous session, then start synchronously inside this tap.
+  // iOS Safari drops the user-gesture if start() happens after a DOM rebuild,
+  // and continuous=true often ends the session before any result is final.
+  discardVoice();
+  const gen = speechGen;
+  speechSession = createSpeechSession();
   const rec = new SR();
+  activeRec = rec;
   rec.lang = voiceLang();
-  try{ rec.continuous = true; }catch(e){}
-  try{ rec.interimResults = true; }catch(e){}
+  rec.continuous = false;
+  rec.interimResults = true;
+  try{ rec.maxAlternatives = 1; }catch(e){}
   rec.onresult = (event) => {
-    let finalText = '', interim = '';
-    for(const res of event.results){
-      const chunk = res[0] && res[0].transcript ? res[0].transcript : '';
-      if(res.isFinal) finalText += chunk + ' ';
-      else interim += chunk;
+    const results = [];
+    const list = event && event.results;
+    for(let i = 0; list && i < list.length; i++){
+      const alt = list[i] && list[i][0];
+      results.push({transcript: alt && alt.transcript ? alt.transcript : '', isFinal: !!(list[i] && list[i].isFinal)});
     }
-    state.voice.finalText = finalText.trim();
-    state.voice.interim = interim;
-    const heard = document.getElementById('voiceHeardText');
-    const details = document.getElementById('voiceHeard');
-    if(details) details.open = true;
-    if(heard) heard.textContent = [state.voice.finalText, state.voice.interim].filter(Boolean).join(' ').trim() || '\u2026';
+    pushSpeechEvent(gen, {type:'result', results});
   };
   rec.onerror = (ev) => {
-    const code = ev && ev.error;
-    if(code==='not-allowed' || code==='service-not-allowed'){
-      state.voice.message = 'denied';
-      state.voice.listening = false;
-      rec.onend = null;
-      try{ rec.stop(); }catch(e){}
-      activeRec = null;
-      render();
-    }else if(code==='no-speech'){
-      state.voice.message = 'nospeech';
-    }else if(code!=='aborted'){
-      state.voice.message = 'error';
-    }
+    pushSpeechEvent(gen, {type:'error', code: speechErrorCode(ev && ev.error)});
   };
   rec.onend = () => {
-    activeRec = null;
-    const text = [state.voice.finalText, state.voice.interim].filter(Boolean).join(' ').trim();
-    state.voice.listening = false;
-    if(text) applyVoiceTranscript(text);
-    else {
-      if(!state.voice.message) state.voice.message = 'nospeech';
-      render();
-    }
+    if(activeRec === rec) activeRec = null;
+    pushSpeechEvent(gen, {type:'end'});
   };
+  state.voice.message = '';
+  state.voice.errorCode = '';
+  state.voice.interim = '';
+  state.voice.finalText = '';
+  state.voice.liveText = '';
+  state.voice.heardOpen = true;
   try{
     rec.start();
-    activeRec = rec;
-  }catch(e){
-    state.voice.listening = false;
-    state.voice.message = 'error';
+  }catch(err){
     activeRec = null;
-    render();
+    pushSpeechEvent(gen, {type:'error', code: speechErrorCode(err && (err.name || err.message)) || 'start-failed'});
+    return;
   }
+  if(speechSession.applied || gen !== speechGen) return;
+  state.voice.listening = true;
+  render();
+}
+function speechErrorCode(code){
+  const c = String(code || '');
+  if(c === 'NotAllowedError' || c === 'PermissionDeniedError') return 'not-allowed';
+  if(c === 'SecurityError') return 'insecure-context';
+  return c;
 }
 function toggleVoice(){
-  if(state.voice.listening) stopVoice(true);
+  if(state.voice.listening) requestStopVoice();
   else startVoice();
 }
 function resetVoiceForForm(){
-  stopVoice(false);
+  discardVoice();
   state.formDraft = null;
   state.voice = freshVoice(voiceDemo);
 }
@@ -1643,7 +1729,7 @@ document.addEventListener('click', e => {
   const act = el.dataset.action, id = el.dataset.id, v = el.dataset.v;
 
   if(act==='set-mode'){
-    stopVoice(false);
+    discardVoice();
     state.mode=v; state.statusFilter='active'; state.methodFilter='all'; state.search='';
     state.sort={key:'date',dir:1}; state.showForm=false; state.editingId=null; state.showImport=false;
     state.formDraft=null; state.voice=freshVoice(voiceDemo);
@@ -1715,7 +1801,7 @@ document.addEventListener('click', e => {
     el.className = v===cfg().methodOptions[0][0] ? 'on-a' : 'on-b';
   }
   else if(act==='close-form'){ closeForm(); }
-  else if(act==='voice-mic'){ e.preventDefault(); toggleVoice(); }
+  else if(act==='voice-mic'){ toggleVoice(); }
   else if(act==='save-form'){ saveForm(); }
   else if(act==='delete-from-form'){
     if(confirm(`Delete this ${cfg().plural.replace(/s$/,'')} and its files? This cannot be undone.`)){
@@ -1759,7 +1845,7 @@ document.addEventListener('keydown', e => {
 });
 
 function closeForm(){
-  stopVoice(false);
+  discardVoice();
   state.showForm=false; state.editingId=null; state.uploadError='';
   state.formDraft=null; state.voice=freshVoice(voiceDemo);
   skipCapture=true; render();
@@ -1914,13 +2000,22 @@ function bootVoiceDemo(q){
   if(ui==='listening'){
     state.voice.listening = true;
     state.voice.interim = 'Customer Northwind Trading, twenty pallets';
+    state.voice.liveText = 'Customer Northwind Trading, twenty pallets';
     state.voice.heardOpen = true;
   }else if(ui==='unsupported'){
+    const d = describeVoiceError('not-supported', {ios: isIOSDevice()});
     state.voice.forceUnsupported = true;
-    state.voice.message = 'unsupported';
+    state.voice.message = d.text;
+    state.voice.errorCode = d.code;
     state.voice.demoMic = false;
   }else if(ui==='denied'){
-    state.voice.message = 'denied';
+    const d = describeVoiceError('not-allowed', {ios: isIOSDevice()});
+    state.voice.message = d.text;
+    state.voice.errorCode = d.code;
+  }else if(ui==='siri'){
+    const d = describeVoiceError('service-not-allowed', {ios: true});
+    state.voice.message = d.text;
+    state.voice.errorCode = d.code;
   }
   const say = q.get('say');
   if(ui==='filled' || say){
