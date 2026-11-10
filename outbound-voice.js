@@ -905,14 +905,23 @@ function takeBareReference(text) {
   return { value: null, ambiguous: false };
 }
 
+function stripPhrase(text, phrase) {
+  const words = String(phrase || '').trim().split(/\s+/).filter(Boolean).map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  if (!words.length) return text;
+  const re = new RegExp(`(^|[^A-Za-z0-9])(?:${words.join('\\s+')})(?=$|[^A-Za-z0-9])`, 'gi');
+  return text.replace(re, '$1 ');
+}
+
 function takeCarrier(text) {
   const folded = fold(text);
   const hits = [];
+  const foundPhrases = [];
   let src = ` ${folded} `;
   for (const [phrase, display] of CARRIERS) {
     const token = ` ${phrase} `;
     if (src.includes(token)) {
       hits.push(display);
+      foundPhrases.push(phrase);
       src = src.split(token).join(' ');
     }
   }
@@ -944,13 +953,18 @@ function takeCarrier(text) {
     if (name) out = out.replace(name, ' ');
   }
 
-  if (labelAmbiguous) return { value: null, ambiguous: true, text: out };
-  if (unique.length > 1) return { value: null, ambiguous: true, text: out };
-  if (labeled && unique.length === 1 && labeled !== unique[0]) return { value: null, ambiguous: true, text: out };
-  if (labeled) return { value: labeled, ambiguous: false, text: out };
-  if (unique.length === 1) return { value: unique[0], ambiguous: false, text: out };
-  if (labelMatch && !labeled) return { value: null, ambiguous: false, text: out };
-  return { value: null, ambiguous: false, text: out };
+  let cleaned = out;
+  for (const phrase of foundPhrases) cleaned = stripPhrase(cleaned, phrase);
+  if (labeled) cleaned = stripPhrase(cleaned, labeled);
+  cleaned = cleaned.replace(/\s+/g, ' ').trim();
+  const done = (value, ambiguous) => ({ value, ambiguous, text: cleaned });
+  if (labelAmbiguous) return done(null, true);
+  if (unique.length > 1) return done(null, true);
+  if (labeled && unique.length === 1 && labeled !== unique[0]) return done(null, true);
+  if (labeled) return done(labeled, false);
+  if (unique.length === 1) return done(unique[0], false);
+  if (labelMatch && !labeled) return done(null, false);
+  return done(null, false);
 }
 
 function takeMethod(text) {
@@ -1058,10 +1072,21 @@ export function matchCustomerPhrase(heard, customers, options = {}) {
     if (!groups.has(official)) groups.set(official, [official]);
     groups.get(official).push(String(nick));
   }
+  const tokens = fold(heard).split(' ').filter(Boolean);
+  const spans = [];
+  for (let i = 0; i < tokens.length; i++) {
+    for (let len = 1; len <= Math.min(6, tokens.length - i); len++) {
+      const span = tokens.slice(i, i + len).join(' ');
+      if (span.replace(/\s/g, '').length >= 4) spans.push(span);
+    }
+  }
+  if (!spans.length && fold(heard)) spans.push(fold(heard));
   const ranked = [];
   for (const [official, phrases] of groups) {
     let score = 0;
-    for (const phrase of phrases) score = Math.max(score, similarity(heard, phrase));
+    for (const span of spans) {
+      for (const phrase of phrases) score = Math.max(score, similarity(span, phrase));
+    }
     ranked.push({ name: official, score });
   }
   ranked.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));

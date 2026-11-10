@@ -8,7 +8,35 @@ import path from 'node:path';
 import { chromium, webkit, devices } from 'playwright';
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname));
-const PHRASE = 'all set health order 48213 ship tomorrow pickup 20 pallets Estes';
+function tomorrowISO() {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+const CASES = [
+  {
+    name: 'estes after the name',
+    phrase: 'all set health PO 48213 tomorrow pickup 20 pallets Estes',
+    reference: 'PO-48213',
+  },
+  {
+    name: 'estes before the name',
+    phrase: 'Estes pickup 20 pallets tomorrow PO 48213 all set health',
+    reference: 'PO-48213',
+  },
+  {
+    name: 'spanish recogida',
+    phrase: 'all set health PO 48213 mañana recogida 20 tarimas Estes',
+    reference: 'PO-48213',
+  },
+  {
+    name: 'chinese pickup',
+    phrase: 'Estes 自提 20托盘 明天 订单号 48213 all set health',
+    reference: '48213',
+  },
+];
 
 function startServer() {
   const server = http.createServer((req, res) => {
@@ -73,16 +101,16 @@ async function readForm(page) {
   });
 }
 
-function assertFilled(form, label) {
+function assertFilled(form, label, spec) {
   const problems = [];
   if (form.customer.value !== 'Allsethealth') problems.push(`customer ${form.customer.value}`);
   if (!form.customer.voice) problems.push('customer missing Voice mark');
   if (!form.chips.includes('Allsethealth')) problems.push('missing Allsethealth chip');
-  if (form.reference.value !== '48213') problems.push(`reference ${form.reference.value}`);
+  if (form.reference.value !== spec.reference) problems.push(`reference ${form.reference.value}`);
   if (!form.reference.voice) problems.push('reference missing Voice mark');
   if (form.carrier.value !== 'Estes') problems.push(`carrier ${form.carrier.value}`);
   if (!form.carrier.voice) problems.push('carrier missing Voice mark');
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(form.date.value)) problems.push(`date ${form.date.value}`);
+  if (form.date.value !== tomorrowISO()) problems.push(`date ${form.date.value}`);
   if (!form.date.voice) problems.push('date missing Voice mark');
   if (form.cartons.value !== '20 pallets') problems.push(`cartons ${form.cartons.value}`);
   if (!form.cartons.voice) problems.push('cartons missing Voice mark');
@@ -93,7 +121,7 @@ function assertFilled(form, label) {
   if (problems.length) throw new Error(`${label}: ${problems.join('; ')} | ${JSON.stringify(form)}`);
 }
 
-async function runCase(browserType, name, drive) {
+async function runCase(browserType, name, phrase, drive) {
   const browser = await browserType.launch({ headless: true });
   const context = await browser.newContext({ ...devices['iPhone 13'], locale: 'en-US' });
   const page = await context.newPage();
@@ -109,7 +137,7 @@ async function runCase(browserType, name, drive) {
   if (label.includes('stop')) await page.click('#voiceMic');
   await page.waitForFunction(() => (document.getElementById('f_customer')?.value || '') === 'Allsethealth');
   const form = await readForm(page);
-  assertFilled(form, name);
+  assertFilled(form, name, { reference: phrase.reference });
   if (errors.length) throw new Error(errors.join('\n'));
   await browser.close();
   console.log('ok', name);
@@ -120,17 +148,18 @@ const server = await startServer();
 base = `http://127.0.0.1:${server.address().port}`;
 
 try {
-  const finalThenStop = async page => {
-    await emit(page, 'all set health', false);
-    await emit(page, PHRASE, true);
-  };
-  const iosEndFirst = async page => {
-    await page.evaluate(() => window.__rec.onend && window.__rec.onend());
-    await emit(page, PHRASE, false);
-  };
-  for (const [type, label] of [[chromium, 'chromium'], [webkit, 'webkit']]) {
-    await runCase(type, `${label} interim+final then stop`, finalThenStop);
-    await runCase(type, `${label} onend-first interim then stop`, iosEndFirst);
+  for (const [type, engine] of [[chromium, 'chromium'], [webkit, 'webkit']]) {
+    for (const spec of CASES) {
+      await runCase(type, `${engine} ${spec.name}`, spec, async page => {
+        await emit(page, spec.phrase.slice(0, 14), false);
+        await emit(page, spec.phrase, true);
+      });
+    }
+    const exact = CASES[0];
+    await runCase(type, `${engine} onend-first ${exact.name}`, exact, async page => {
+      await page.evaluate(() => window.__rec.onend && window.__rec.onend());
+      await emit(page, exact.phrase, false);
+    });
   }
 } finally {
   server.close();

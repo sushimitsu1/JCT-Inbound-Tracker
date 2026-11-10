@@ -457,6 +457,33 @@ test('an explicit customer unlike anyone loaded is kept and flagged', () => {
 
 const TRICKY = ['Allsethealth', 'Q.R. Lin Imports', 'Bright Harbor Goods', 'Northwind Trading'];
 
+test('carrier words are removed so the customer span still matches', () => {
+  const list = ['Allsethealth', 'Q.R. Lin Imports', 'Northwind Trading'];
+  const cases = [
+    ['all set health PO 48213 tomorrow pickup 20 pallets Estes', 'PO-48213', '2026-11-11', 'pickup', '20 pallets'],
+    ['Estes all set health PO 48213 tomorrow pickup 20 pallets', 'PO-48213', '2026-11-11', 'pickup', '20 pallets'],
+    ['all set health PO 48213 mañana recogida 20 tarimas Estes', 'PO-48213', '2026-11-11', 'pickup', '20 pallets'],
+    ['Estes recogida mañana 20 tarimas PO 48213 all set health', 'PO-48213', '2026-11-11', 'pickup', '20 pallets'],
+    ['all set health 订单号 48213 明天 自提 20托盘 Estes', '48213', '2026-11-11', 'pickup', '20 pallets'],
+    ['Estes 自提 20托盘 明天 订单号 48213 all set health', '48213', '2026-11-11', 'pickup', '20 pallets'],
+  ];
+  for (const [text, reference, shipDate, method, cartons] of cases) {
+    const result = parse(text, list);
+    expectFilled(result, {
+      customer: 'Allsethealth',
+      reference,
+      carrier: 'Estes',
+      shipDate,
+      method,
+      cartons,
+    });
+    assert.ok(result.suggestions.customer.includes('Allsethealth'), text);
+  }
+  const messy = matchCustomerPhrase('all set health Estes', list);
+  assert.equal(messy.best, 'Allsethealth');
+  assert.equal(messy.confident, true);
+});
+
 test('fuzzy customer match: split words, spelled initials, and a clear winner', () => {
   const split = matchCustomerPhrase('all set health', TRICKY);
   assert.equal(split.best, 'Allsethealth');
