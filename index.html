@@ -337,6 +337,10 @@ table.batch{border-collapse:collapse;width:100%;font-size:14px;background:var(--
 .voice-live span{font-weight:700;color:var(--ink);}
 .voice-msg{background:var(--rust-bg);color:#8a4b12;border-radius:14px;padding:14px 14px;font-weight:700;font-size:15.5px;line-height:1.4;margin-bottom:10px;}
 .voice-code{display:block;margin-top:6px;font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:600;letter-spacing:.02em;}
+.voice-summary{margin-top:8px;font-size:15px;font-weight:800;color:var(--teal);}
+.cust-chips{display:flex;flex-direction:column;gap:8px;margin-top:8px;}
+.cust-chip{min-height:48px;border-radius:12px;border:2px solid var(--navy);background:#fff;color:var(--navy);font-weight:800;font-size:17px;padding:12px 14px;text-align:left;cursor:pointer;}
+.cust-chip:active{background:var(--navy);color:#fff;}
 .heard{margin-top:10px;background:#fbfaf7;border:1.5px solid var(--line);border-radius:12px;padding:8px 12px;}
 .heard summary{font-weight:800;font-size:12.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-soft);cursor:pointer;}
 .heard p{margin:8px 0 2px;font-size:15px;line-height:1.4;max-height:72px;overflow:auto;}
@@ -378,7 +382,7 @@ import {
 import {
   getStorage, ref, uploadBytes, getDownloadURL, deleteObject
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
-import { parseOutboundTranscript, createSpeechSession, reduceSpeechSession, describeVoiceError } from "./outbound-voice.js";
+import { parseOutboundTranscript, createSpeechSession, reduceSpeechSession, describeVoiceError, voiceFillSummary } from "./outbound-voice.js";
 
 /* ================= Firebase ================= */
 const firebaseConfig = {
@@ -487,6 +491,7 @@ let state = {
   migrateMsg:'',
   demo:false,
   formDraft:null,
+  customerAliases:{},
   voice:{
     listening:false, interim:'', finalText:'', transcript:'', liveText:'', heardOpen:false,
     message:'', errorCode:'', forceUnsupported:false, demoMic:false, filled:{}, ambiguous:{},
@@ -1097,7 +1102,7 @@ function formHtml(){
       </div>
       <div class="panel-b">
         ${state.mode==='outbound' ? voiceBarHtml() : ''}
-        <div class="field${voiceClass('customer')}"><label>Customer${voiceBadge('customer')}</label><input type="text" id="f_customer" value="${esc(customerVal)}" placeholder="e.g. Allsetthealth">${voiceHint('customer')}</div>
+        <div class="field${voiceClass('customer')}"><label>Customer${voiceBadge('customer')}</label><input type="text" id="f_customer" value="${esc(customerVal)}" placeholder="e.g. Allsetthealth">${voiceHint('customer')}${customerChipsHtml()}</div>
         <div class="row2">
           <div class="field${voiceClass('reference')}"><label>${c.numberLabel}${voiceBadge('reference')}</label><input type="text" id="f_number" value="${esc(numberVal)}" placeholder="${c.numberPlaceholder}" style="font-family:'JetBrains Mono',monospace;font-weight:700;letter-spacing:.04em;">${voiceHint('reference')}</div>
           <div class="field${voiceClass('carrier')}"><label>${c.extraLabel}${voiceBadge('carrier')}</label>${extraFieldHtml}${voiceHint('carrier')}</div>
@@ -1311,7 +1316,8 @@ let skipCapture = false;
 function freshVoice(keepDemo){
   return {
     listening:false, interim:'', finalText:'', transcript:'', liveText:'', heardOpen:false,
-    message:'', errorCode:'', forceUnsupported:false, demoMic: !!keepDemo, filled:{}, ambiguous:{},
+    message:'', errorCode:'', summary:'', forceUnsupported:false, demoMic: !!keepDemo, filled:{}, ambiguous:{},
+    suggestions:{customer:[]},
   };
 }
 function isIOSDevice(){
@@ -1332,9 +1338,18 @@ function setVoiceLang(v){
 }
 function voiceClass(key){
   if(state.mode!=='outbound' || !state.voice) return '';
-  if(state.voice.filled[key]) return ' voice-filled';
-  if(state.voice.ambiguous[key]) return ' voice-check';
-  return '';
+  const bits = [];
+  if(state.voice.filled[key]) bits.push('voice-filled');
+  if(state.voice.ambiguous[key]) bits.push('voice-check');
+  return bits.length ? ' '+bits.join(' ') : '';
+}
+function customerChipsHtml(){
+  if(state.mode!=='outbound') return '';
+  const list = (state.voice.suggestions && state.voice.suggestions.customer) || [];
+  if(!list.length) return '';
+  return `<div class="cust-chips" id="customerChips">${list.map(name =>
+    `<button type="button" class="cust-chip" data-action="voice-pick-customer" data-v="${esc(name)}">${esc(name)}</button>`
+  ).join('')}</div>`;
 }
 function voiceBadge(key){
   if(state.mode!=='outbound' || !state.voice || !state.voice.filled[key]) return '';
@@ -1382,6 +1397,7 @@ function voiceBarHtml(){
       </select>
     </div>
     <div class="voice-sub">Tap to start, talk, then tap again to stop. Review, then tap Save.</div>
+    ${state.voice.summary ? `<div class="voice-summary" id="voiceSummary">${esc(state.voice.summary)}</div>` : ''}
     <div class="voice-live" id="voiceLive" ${listening?'':'hidden'}>Listening\u2026 I hear: <span id="voiceLiveText">${esc(liveWords || '\u2026')}</span></div>`;
   return `<div class="voice-wrap">
     ${voiceBannerHtml()}
@@ -1420,19 +1436,26 @@ function captureOutboundDraft(){
 }
 function applyVoiceToState(text){
   if(!state.formDraft) state.formDraft = blankOutboundDraft();
-  const parsed = parseOutboundTranscript(text, {customers: knownCustomers(), now: new Date()});
+  const parsed = parseOutboundTranscript(text, {customers: knownCustomers(), now: new Date(), aliases: state.customerAliases || {}});
   const draftKey = {customer:'customer', reference:'reference', shipDate:'shipDate', carrier:'carrier', cartons:'cartons', skus:'skus', note:'note', tag:'tag'};
+  const review = new Set(parsed.review || []);
+  if(!state.voice.suggestions) state.voice.suggestions = {customer:[]};
+  state.voice.suggestions.customer = (parsed.suggestions && parsed.suggestions.customer) || [];
   for(const key of ['customer','reference','shipDate','method','carrier','cartons','skus','note','tag']){
     if(parsed.ambiguous.includes(key)){
       state.voice.ambiguous[key] = true;
       delete state.voice.filled[key];
+      if(key==='method') state.formMethod = state.formMethod;
+      else if(draftKey[key]) state.formDraft[draftKey[key]] = '';
     }else if(parsed.filled.includes(key)){
       state.voice.filled[key] = true;
-      delete state.voice.ambiguous[key];
+      if(review.has(key)) state.voice.ambiguous[key] = true;
+      else delete state.voice.ambiguous[key];
       if(key==='method') state.formMethod = parsed.fields.method;
       else state.formDraft[draftKey[key]] = parsed.fields[key];
     }
   }
+  state.voice.summary = voiceFillSummary(parsed);
   state.voice.transcript = text;
   state.voice.interim = '';
   state.voice.finalText = '';
@@ -1573,6 +1596,7 @@ function startVoice(){
   };
   state.voice.message = '';
   state.voice.errorCode = '';
+  state.voice.summary = '';
   state.voice.interim = '';
   state.voice.finalText = '';
   state.voice.liveText = '';
@@ -1802,6 +1826,16 @@ document.addEventListener('click', e => {
   }
   else if(act==='close-form'){ closeForm(); }
   else if(act==='voice-mic'){ toggleVoice(); }
+  else if(act==='voice-pick-customer'){
+    captureOutboundDraft();
+    if(!state.formDraft) state.formDraft = blankOutboundDraft();
+    state.formDraft.customer = el.dataset.v || '';
+    state.voice.filled.customer = true;
+    delete state.voice.ambiguous.customer;
+    if(state.voice.suggestions) state.voice.suggestions.customer = [];
+    skipCapture = true;
+    render();
+  }
   else if(act==='save-form'){ saveForm(); }
   else if(act==='delete-from-form'){
     if(confirm(`Delete this ${cfg().plural.replace(/s$/,'')} and its files? This cannot be undone.`)){
@@ -1990,6 +2024,8 @@ function bootVoiceDemo(q){
     {id:'demo-out-2', customer:'Lumen Home Co', reference:'PO-10002', carrier:'Saia', shipDate:'11/18/2026', cartons:'6 cartons', method:'delivery', skus:'2', note:'', status:'staged', tag:'BOL-1002', attachments:[]},
     {id:'demo-out-3', customer:'Costa Mesa Supply', reference:'55210', carrier:'Old Dominion', shipDate:'11/20/2026', cartons:'30 cartons', method:'pickup', skus:'8', note:'', status:'scheduled', tag:'', attachments:[]},
     {id:'demo-out-4', customer:'Pacific Sample Works', reference:'PO-4400', carrier:'FedEx', shipDate:'11/21/2026', cartons:'2 pallets', method:'delivery', skus:'1', note:'', status:'loaded', tag:'BOL-4400', attachments:[]},
+    {id:'demo-out-5', customer:'Allsethealth', reference:'PO-2201', carrier:'Saia', shipDate:'11/22/2026', cartons:'4 pallets', method:'pickup', skus:'2', note:'', status:'scheduled', tag:'BOL-2201', attachments:[]},
+    {id:'demo-out-6', customer:'Q.R. Lin Imports', reference:'PO-3302', carrier:'Estes', shipDate:'11/23/2026', cartons:'8 cartons', method:'delivery', skus:'3', note:'', status:'scheduled', tag:'BOL-3302', attachments:[]},
   ];
   state.showForm = true;
   state.editingId = null;

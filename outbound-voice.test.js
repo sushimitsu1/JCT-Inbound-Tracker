@@ -6,6 +6,8 @@ import {
   createSpeechSession,
   reduceSpeechSession,
   describeVoiceError,
+  matchCustomerPhrase,
+  voiceFillSummary,
 } from './outbound-voice.js';
 
 const NOW = new Date(2026, 10, 10, 12, 0, 0); // Tue Nov 10, 2026
@@ -196,13 +198,11 @@ test('explicit customer typo within one edit uses the stored name', () => {
   expectFilled(result, { customer: 'Northwind Trading', cartons: '4 pallets' });
 });
 
-test('explicit unknown customer is kept verbatim and not matched loosely', () => {
+test('a loosely similar explicit customer is not guessed', () => {
   const result = parse('customer Harbor Lane Goods, PO 77, delivery');
-  expectFilled(result, {
-    customer: 'Harbor Lane Goods',
-    reference: 'PO-77',
-    method: 'delivery',
-  });
+  expectFilled(result, { customer: null, reference: 'PO-77', method: 'delivery' });
+  assert.ok(result.ambiguous.includes('customer'));
+  assert.ok(result.suggestions.customer.includes('Bright Harbor Goods'));
   assert.equal(result.fields.customer === 'Bright Harbor Goods', false);
 });
 
@@ -389,14 +389,23 @@ test('onend with nothing, after the grace period, is no-speech', () => {
   assert.equal(out.code, 'no-speech');
 });
 
-test('tap stop keeps the words already heard once the grace period ends', () => {
+test('tap stop applies the words already heard without waiting for onend', () => {
   const out = play([
     { type: 'result', results: [{ transcript: 'twelve cartons', isFinal: false }] },
     { type: 'stop' },
-    { type: 'grace' },
   ]);
   assert.equal(out.action, 'apply');
   assert.equal(out.text, 'twelve cartons');
+});
+
+test('a later empty result does not wipe a longer transcript', () => {
+  const heard = play([
+    { type: 'result', results: [{ transcript: 'Northwind Trading PO 48213', isFinal: false }] },
+    { type: 'result', results: [{ transcript: '', isFinal: true }] },
+    { type: 'stop' },
+  ]);
+  assert.equal(heard.action, 'apply');
+  assert.equal(heard.text, 'Northwind Trading PO 48213');
 });
 
 test('speech errors map to a specific message and keep the raw code', () => {
@@ -421,4 +430,73 @@ test('speech errors map to a specific message and keep the raw code', () => {
   assert.match(describeVoiceError('not-allowed').text, /permission/i);
   assert.match(describeVoiceError('no-speech').text, /Didn't catch/);
   assert.equal(describeVoiceError('something-new').code, 'something-new');
+});
+
+test('worker phrasing for order numbers, bare ids, and recogida', () => {
+  expectFilled(parse('order 48213'), { reference: '48213' });
+  expectFilled(parse('order number 48213'), { reference: '48213' });
+  expectFilled(parse('P O 48213'), { reference: 'PO-48213' });
+  expectFilled(parse('Northwind Trading 48213 ship tomorrow'), {
+    customer: 'Northwind Trading',
+    reference: '48213',
+    shipDate: '2026-11-11',
+  });
+  const recogida = parse('recogida mañana 10 cajas');
+  expectFilled(recogida, { method: 'pickup', shipDate: '2026-11-11', cartons: '10 cartons' });
+  expectFilled(parse('entrega hoy'), { method: 'delivery', shipDate: '2026-11-10' });
+  const prose = parse('in order to ship tomorrow pickup');
+  assert.equal(prose.fields.reference, null);
+  assert.equal(prose.ambiguous.includes('reference'), false);
+});
+
+test('an explicit customer unlike anyone loaded is kept and flagged', () => {
+  const result = parse('customer Zebra Quartz LLC, PO 77, delivery');
+  expectFilled(result, { customer: 'Zebra Quartz LLC', reference: 'PO-77', method: 'delivery' });
+  assert.ok(result.review.includes('customer'));
+});
+
+const TRICKY = ['Allsethealth', 'Q.R. Lin Imports', 'Bright Harbor Goods', 'Northwind Trading'];
+
+test('fuzzy customer match: split words, spelled initials, and a clear winner', () => {
+  const split = matchCustomerPhrase('all set health', TRICKY);
+  assert.equal(split.best, 'Allsethealth');
+  assert.equal(split.confident, true);
+  assert.ok(split.suggestions.includes('Allsethealth'));
+
+  const initials = matchCustomerPhrase('cue are lynn imports', TRICKY);
+  assert.equal(initials.best, 'Q.R. Lin Imports');
+  assert.equal(initials.confident, true);
+
+  const merged = matchCustomerPhrase('allset health', TRICKY);
+  assert.equal(merged.best, 'Allsethealth');
+
+  const parsed = parse('all set health order 48213 ship tomorrow pickup', TRICKY);
+  expectFilled(parsed, { customer: 'Allsethealth', reference: '48213', method: 'pickup', shipDate: '2026-11-11' });
+  assert.ok(parsed.suggestions.customer.includes('Allsethealth'));
+});
+
+test('close or weak customer matches stay blank and suggest chips', () => {
+  const close = matchCustomerPhrase('all set', ['Allsethealth', 'Allset Home']);
+  assert.equal(close.best, null);
+  assert.equal(close.confident, false);
+  assert.ok(close.suggestions.length >= 1);
+  assert.ok(close.suggestions.length <= 3);
+
+  const heard = parse('customer all set pickup', ['Allsethealth', 'Allset Home']);
+  assert.equal(heard.fields.customer, null);
+  assert.ok(heard.ambiguous.includes('customer'));
+  assert.ok(heard.suggestions.customer.length >= 1);
+  assert.ok(heard.suggestions.customer.length <= 3);
+});
+
+test('alias map can retarget a nickname without being stored', () => {
+  const matched = matchCustomerPhrase('buddy co', ['Allsethealth'], { aliases: { 'buddy co': 'Allsethealth' } });
+  assert.equal(matched.best, 'Allsethealth');
+  const via = parseOutboundTranscript('customer buddy co pickup', {
+    customers: ['Allsethealth'],
+    now: NOW,
+    aliases: { 'buddy co': 'Allsethealth' },
+  });
+  expectFilled(via, { customer: 'Allsethealth', method: 'pickup' });
+  assert.equal(voiceFillSummary({ filled: ['a', 'b', 'c', 'd', 'e'], ambiguous: ['carrier'], review: [] }), 'Filled 5 fields, 1 needs a check');
 });

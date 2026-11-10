@@ -112,8 +112,8 @@ const KEYWORDS = [
   'delivery date', 'ship date', 'shipping date', 'fecha de entrega', 'fecha de envio', 'fecha de embarque',
   'tomorrow', 'today', 'manana', 'hoy', 'pallets', 'pallet', 'tarimas', 'tarima', 'paletas', 'paleta',
   'cartons', 'carton', 'cajas', 'caja', 'cartones', 'skus', 'sku', 'codigos', 'codigo',
-  'carrier', 'transportista', 'customer', 'cliente', 'pickup', 'delivery', 'deliver', 'recoger',
-  'recoleccion', 'entrega', 'reparto', 'bol', 'tag', 'guia', 'pedido', 'orden', 'po', 'note', 'nota',
+  'carrier', 'transportista', 'customer', 'cliente', 'pickup', 'delivery', 'deliver',   'recoger', 'recogida',
+  'recoleccion', 'entrega', 'reparto', 'bol', 'tag', 'guia', 'pedido', 'orden', 'order', 'po', 'note', 'nota',
   'notes', 'notas', 'next week', 'proxima semana',
   '订单号', '采购单号', '采购单', '订单', '提单号', '提单', '标签', '承运商', '快递', '卡车',
   '客户', '托盘', '栈板', '纸箱', '盒子', '今天', '明天', '今日', '明日', '自提', '提货', '送货', '配送',
@@ -122,11 +122,13 @@ const KEYWORDS = [
 
 /**
  * @param {string} transcript
- * @param {{ customers?: string[], now?: Date }} [options]
+ * @param {{ customers?: string[], now?: Date, aliases?: Record<string, string> }} [options]
+ * aliases maps a nickname to the official customer name. Nothing is stored; pass a map when you have one.
  */
 export function parseOutboundTranscript(transcript, options = {}) {
   const now = options.now instanceof Date && !Number.isNaN(options.now.getTime()) ? options.now : new Date();
   const customers = dedupeCustomers(options.customers || []);
+  const aliases = options.aliases && typeof options.aliases === 'object' ? options.aliases : {};
   const fields = blankFields();
   const ambiguous = new Set();
 
@@ -182,11 +184,21 @@ export function parseOutboundTranscript(transcript, options = {}) {
   if (method.ambiguous) ambiguous.add('method');
   else if (method.value) fields.method = method.value;
 
-  const customer = resolveCustomer(customerSpan?.span || '', work, customers);
+  const customer = resolveCustomer(customerSpan?.span || '', work, customers, aliases);
+  const review = new Set();
   if (customer.ambiguous) ambiguous.add('customer');
-  else if (customer.value) fields.customer = customer.value;
+  else if (customer.value) {
+    fields.customer = customer.value;
+    if (customer.review) review.add('customer');
+  }
 
-  return pack(fields, ambiguous);
+  if (!fields.reference && !ambiguous.has('reference') && (fields.customer || customer.ambiguous || customer.review || customerSpan)) {
+    const bare = takeBareReference(work);
+    if (bare.ambiguous) ambiguous.add('reference');
+    else if (bare.value) fields.reference = bare.value;
+  }
+
+  return pack(fields, ambiguous, review, { customer: customer.suggestions || [] });
 }
 
 function blankFields() {
@@ -196,13 +208,25 @@ function blankFields() {
   };
 }
 
-function pack(fields, ambiguous) {
+function pack(fields, ambiguous, review = new Set(), suggestions = { customer: [] }) {
   for (const key of ambiguous) fields[key] = null;
   return {
     fields,
     filled: OUTBOUND_VOICE_FIELDS.filter(k => fields[k] != null && fields[k] !== ''),
     ambiguous: OUTBOUND_VOICE_FIELDS.filter(k => ambiguous.has(k)),
+    review: OUTBOUND_VOICE_FIELDS.filter(k => review.has(k) && !ambiguous.has(k)),
+    suggestions,
   };
+}
+
+export function voiceFillSummary(parsed) {
+  const filled = (parsed && parsed.filled) || [];
+  const checks = new Set([...(parsed && parsed.ambiguous || []), ...(parsed && parsed.review || [])]);
+  const n = filled.length;
+  const c = checks.size;
+  const fieldsWord = `${n} field${n === 1 ? '' : 's'}`;
+  if (!c) return `Filled ${fieldsWord}`;
+  return `Filled ${fieldsWord}, ${c} ${c === 1 ? 'needs' : 'need'} a check`;
 }
 
 export function fold(s) {
@@ -753,6 +777,8 @@ function takeSkus(text) {
 const REF_LABELS = [
   { re: /\bpurchase order\b|\bp\s+o\b|\bpo\b/gi, prefix: 'PO' },
   { re: /\border number\b|\border no\b|\border num\b/gi, prefix: null },
+  // "order 48213" counts. Bare "order" inside "in order to" has no number, so it is weak and ignored.
+  { re: /\border\b/gi, prefix: null, weak: true },
   { re: /\borden de compra\b|\bnumero de orden\b|\bnumero de pedido\b/gi, prefix: null },
   { re: /\bpedido\b|\borden\b/gi, prefix: null },
   { re: /采购单号|订单号|采购单|订单/g, prefix: null },
@@ -836,9 +862,15 @@ function takeLabeledNumber(text, labels) {
       const after = src.slice(m.index + m[0].length);
       const read = readLabeledValue(after);
       const end = m.index + m[0].length + (read.length || 0);
-      ranges.push([m.index, Math.max(end, m.index + m[0].length)]);
-      if (read.missing || !read.value) missing = true;
-      else {
+      if (read.missing || !read.value) {
+        if (!label.weak) {
+          ranges.push([m.index, Math.max(end, m.index + m[0].length)]);
+          missing = true;
+        }
+        if (m.index === re.lastIndex) re.lastIndex++;
+        continue;
+      } else {
+        ranges.push([m.index, Math.max(end, m.index + m[0].length)]);
         const norm = normalizeCode(label.prefix, read.value);
         if (norm) found.push(norm);
         else missing = true;
@@ -865,6 +897,14 @@ function takeLabeledNumber(text, labels) {
   return { value: null, ambiguous: false, text: out };
 }
 
+function takeBareReference(text) {
+  const nums = [...String(text || '').matchAll(/\b(\d{5,})\b/g)].map(m => m[1]);
+  const unique = [...new Set(nums)];
+  if (unique.length > 1) return { value: null, ambiguous: true };
+  if (unique.length === 1) return { value: unique[0], ambiguous: false };
+  return { value: null, ambiguous: false };
+}
+
 function takeCarrier(text) {
   const folded = fold(text);
   const hits = [];
@@ -888,11 +928,11 @@ function takeCarrier(text) {
     const cleaned = after.replace(/^[\s:：]+/, '').replace(/^(?:is|es|是)\s+/i, '');
     const name = readNameTokens(cleaned, 4);
     const f = fold(name);
-    const methodNext = /^(?:pickup|pick\s*up|delivery|deliver|will\s*call|recoger|entrega|自提|送货|配送)\b/i.test(cleaned);
+    const methodNext = /^(?:pickup|pick\s*up|delivery|deliver|will\s*call|recoger|recogida|entrega|自提|送货|配送)\b/i.test(cleaned);
     if (!name) {
       // "carrier pickup" is the method. A bare "carrier" with no name is unclear.
       if (!methodNext && unique.length === 0) labelAmbiguous = true;
-    } else if (methodNext && /^(?:pickup|pick up|delivery|deliver|will call|recoger|entrega|自提|送货|配送)$/.test(f)) {
+    } else if (methodNext && /^(?:pickup|pick up|delivery|deliver|will call|recoger|recogida|entrega|自提|送货|配送)$/.test(f)) {
       labeled = null;
     } else if (AMBIGUOUS_NAME.test(f) || /\bor\b|\bo\b|或者|或/.test(` ${f} `) || /或者|或/.test(name)) {
       labelAmbiguous = true;
@@ -915,14 +955,14 @@ function takeCarrier(text) {
 
 function takeMethod(text) {
   const f = fold(text);
-  const pickup = /\bpick\s*-?\s*up\b|\bwill\s*-?\s*call\b|\brecoger\b|\brecojo\b|\brecoge\b|\brecoleccion\b|\ba recoger\b/.test(f)
+  const pickup = /\bpick\s*-?\s*up\b|\bwill\s*-?\s*call\b|\brecoger\b|\brecogida\b|\brecojo\b|\brecoge\b|\brecoleccion\b|\ba recoger\b/.test(f)
     || /自提|提货|上门提/.test(text);
   const delivery = /\bdeliver(?:y|ies|ed)?\b|\bentrega(?:r|mos|n)?\b|\breparto\b/.test(f)
     || /送货|配送|公司送/.test(text);
   let out = text
     .replace(/\bpick\s*-?\s*up\b/gi, ' ')
     .replace(/\bwill\s*-?\s*call\b/gi, ' ')
-    .replace(/\brecoger\b|\brecojo\b|\brecoge\b|\brecolecci[oó]n\b|\ba recoger\b/gi, ' ')
+    .replace(/\brecoger\b|\brecogida\b|\brecojo\b|\brecoge\b|\brecolecci[oó]n\b|\ba recoger\b/gi, ' ')
     .replace(/\bdeliver(?:y|ies|ed)?\b|\bentrega(?:r|mos|n)?\b|\breparto\b/gi, ' ')
     .replace(/自提|提货|上门提|送货|配送|公司送/g, ' ')
     .replace(/\s+/g, ' ')
@@ -933,23 +973,154 @@ function takeMethod(text) {
   return { value: null, ambiguous: false, text: out };
 }
 
-function resolveCustomer(span, rest, customers) {
-  if (span) {
-    const direct = matchKnown(span, customers);
-    if (direct?.ambiguous) return { value: null, ambiguous: true };
-    if (direct?.value) return { value: direct.value, ambiguous: false };
-    const fuzzy = fuzzyCustomer(span, customers);
-    if (fuzzy?.ambiguous) return { value: null, ambiguous: true };
-    if (fuzzy?.value) return { value: fuzzy.value, ambiguous: false };
-    if (/[A-Za-z\u3400-\u9fff]/.test(span) && !AMBIGUOUS_NAME.test(span)) {
-      return { value: span, ambiguous: false };
-    }
-    return { value: null, ambiguous: true };
+const LETTER_NAMES = {
+  a: 'a', ay: 'a', bee: 'b', see: 'c', sea: 'c', cee: 'c', dee: 'd', ee: 'e',
+  eff: 'f', gee: 'g', aitch: 'h', haitch: 'h', eye: 'i', aye: 'i', jay: 'j',
+  kay: 'k', ell: 'l', el: 'l', em: 'm', en: 'n', oh: 'o', owe: 'o', pee: 'p',
+  cue: 'q', queue: 'q', kew: 'q', are: 'r', arr: 'r', ess: 's', tee: 't', tea: 't',
+  you: 'u', yu: 'u', vee: 'v', ex: 'x', why: 'y', wye: 'y', zee: 'z', zed: 'z',
+};
+
+function phoneticToken(token) {
+  let s = String(token || '');
+  s = s.replace(/ph/g, 'f').replace(/ck/g, 'k').replace(/y/g, 'i');
+  s = s.replace(/(.)\1+/g, '$1');
+  return s;
+}
+
+function customerTokens(phrase) {
+  const raw = fold(phrase).split(' ').filter(Boolean);
+  const mapped = [];
+  let letters = '';
+  const flush = () => { if (letters) { mapped.push(letters); letters = ''; } };
+  for (const tok of raw) {
+    const letter = tok.length === 1 ? tok : LETTER_NAMES[tok];
+    if (letter && letter.length === 1) letters += letter;
+    else { flush(); mapped.push(tok); }
   }
-  const found = matchKnown(rest, customers);
-  if (!found) return { value: null, ambiguous: false };
-  if (found.ambiguous) return { value: null, ambiguous: true };
-  return { value: found.value, ambiguous: false };
+  flush();
+  return mapped;
+}
+
+function compactForm(phrase) {
+  return customerTokens(phrase).map(phoneticToken).join('');
+}
+
+function similarity(heard, candidate) {
+  const hTok = customerTokens(heard);
+  const cTok = customerTokens(candidate);
+  if (!hTok.length || !cTok.length) return 0;
+  const hComp = hTok.map(phoneticToken).join('');
+  const cComp = cTok.map(phoneticToken).join('');
+  if (hComp === cComp) return 1;
+  const hRaw = fold(heard).replace(/[^a-z0-9]/g, '');
+  const cRaw = fold(candidate).replace(/[^a-z0-9]/g, '');
+  if (hRaw && hRaw === cRaw) return 1;
+  let prefix = 0;
+  if (hTok.length <= cTok.length) {
+    let ok = true;
+    for (let i = 0; i < hTok.length; i++) {
+      const a = phoneticToken(hTok[i]);
+      const b = phoneticToken(cTok[i]);
+      if (a !== b && levenshtein(a, b) > (Math.min(a.length, b.length) >= 5 ? 1 : 0)) ok = false;
+    }
+    if (ok && hComp.length >= 5) prefix = 0.9 + 0.08 * (hComp.length / Math.max(cComp.length, 1));
+  }
+  let compactPrefix = 0;
+  if (hComp.length >= 4 && cComp.startsWith(hComp)) {
+    compactPrefix = 0.88 + 0.1 * (hComp.length / cComp.length);
+  }
+  const dist = levenshtein(hComp, cComp);
+  const edit = 1 - dist / Math.max(hComp.length, cComp.length, 1);
+  const setH = new Set(hTok.map(phoneticToken));
+  const setC = new Set(cTok.map(phoneticToken));
+  let inter = 0;
+  for (const t of setH) if (setC.has(t)) inter++;
+  const jaccard = inter / (setH.size + setC.size - inter || 1);
+  return Math.max(prefix, compactPrefix, edit * 0.7 + jaccard * 0.3);
+}
+
+/**
+ * Compare a heard phrase to known customers.
+ * aliases is an optional nickname → official name map. It is not stored.
+ * @returns {{ best: string|null, confident: boolean, bestScore: number, suggestions: string[] }}
+ */
+export function matchCustomerPhrase(heard, customers, options = {}) {
+  const aliases = options && options.aliases && typeof options.aliases === 'object' ? options.aliases : {};
+  const groups = new Map();
+  for (const name of customers || []) {
+    if (!name || typeof name !== 'string') continue;
+    if (!groups.has(name)) groups.set(name, []);
+    groups.get(name).push(name);
+  }
+  for (const [nick, official] of Object.entries(aliases)) {
+    if (!official || typeof official !== 'string') continue;
+    if (!groups.has(official)) groups.set(official, [official]);
+    groups.get(official).push(String(nick));
+  }
+  const ranked = [];
+  for (const [official, phrases] of groups) {
+    let score = 0;
+    for (const phrase of phrases) score = Math.max(score, similarity(heard, phrase));
+    ranked.push({ name: official, score });
+  }
+  ranked.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+  const best = ranked[0];
+  const second = ranked[1];
+  const bestScore = best ? best.score : 0;
+  const gap = second ? bestScore - second.score : 1;
+  const confident = !!best && bestScore >= 0.86 && gap >= 0.08;
+  let suggestions = ranked.filter(r => r.score >= 0.5).slice(0, 3).map(r => r.name);
+  if (confident && best && !suggestions.includes(best.name)) suggestions = [best.name, ...suggestions].slice(0, 3);
+  return { best: confident ? best.name : null, confident, bestScore, suggestions };
+}
+
+function leadingNamePhrase(text) {
+  const stop = new Set(['po', 'order', 'pickup', 'delivery', 'deliver', 'ship', 'tomorrow', 'today', 'hoy', 'manana', 'bol', 'sku', 'skus', 'carrier', 'note', 'nota', 'recoger', 'recogida', 'entrega', 'pallet', 'pallets', 'carton', 'cartons', 'caja', 'cajas', 'tarima', 'tarimas', 'the', 'a', 'an', 'please', 'um', 'uh', 'for', 'and', 'or']);
+  const lead = [];
+  for (const tok of fold(text).split(' ').filter(Boolean)) {
+    if (stop.has(tok) || /^\d+$/.test(tok)) break;
+    lead.push(tok);
+    if (lead.length >= 5) break;
+  }
+  return lead.join(' ');
+}
+
+function decideCustomer(phrase, customers, aliases, explicit) {
+  const heard = String(phrase || '').trim();
+  const m = matchCustomerPhrase(heard, customers, { aliases });
+  if (m.best && m.confident) return { value: m.best, ambiguous: false, review: false, suggestions: m.suggestions };
+  if (m.bestScore >= 0.64) return { value: null, ambiguous: true, review: false, suggestions: m.suggestions };
+  if (explicit && heard && /[A-Za-z\u3400-\u9fff]/.test(heard) && !AMBIGUOUS_NAME.test(heard)) {
+    return { value: heard, ambiguous: false, review: true, suggestions: m.suggestions };
+  }
+  return { value: null, ambiguous: false, review: false, suggestions: [] };
+}
+
+function resolveCustomer(span, rest, customers, aliases) {
+  const empty = { value: null, ambiguous: false, review: false, suggestions: [] };
+  if (span) return decideCustomer(span, customers, aliases, true);
+  const contained = [];
+  const hay = fold(rest);
+  for (const name of customers) {
+    const f = fold(name);
+    if (f.length >= 3 && phraseIn(hay, f)) contained.push(name);
+  }
+  const kept = [];
+  let h = ` ${hay} `;
+  for (const name of [...contained].sort((a, b) => fold(b).length - fold(a).length)) {
+    const p = ` ${fold(name)} `;
+    if (h.includes(p)) { kept.push(name); h = h.split(p).join(' '); }
+  }
+  if (kept.length > 1) return { value: null, ambiguous: true, review: false, suggestions: kept.slice(0, 3) };
+  if (kept.length === 1) {
+    const more = matchCustomerPhrase(kept[0], customers, { aliases }).suggestions;
+    const suggestions = [...new Set([kept[0], ...more])].slice(0, 3);
+    return { value: kept[0], ambiguous: false, review: false, suggestions };
+  }
+  const lead = leadingNamePhrase(rest);
+  if (!lead) return empty;
+  return decideCustomer(lead, customers, aliases, false);
 }
 
 function matchKnown(text, customers) {
@@ -1020,6 +1191,18 @@ function fuzzyCustomer(span, customers) {
  * are collapsed so Android Chrome doesn't fill the form twice.
  * @param {{ transcript?: string, isFinal?: boolean }[]} results
  */
+export function mergeSpeechResults(previous, incoming) {
+  const prev = Array.isArray(previous) ? previous : [];
+  const next = Array.isArray(incoming) ? incoming : [];
+  const prevText = collectSpeechTranscript(prev);
+  const nextText = collectSpeechTranscript(next);
+  if (!nextText) return prev.map(r => ({ ...r }));
+  if (!prevText) return next.map(r => ({ ...r }));
+  if (nextText.length >= prevText.length && (nextText.startsWith(prevText) || nextText.includes(prevText))) return next.map(r => ({ ...r }));
+  if (prevText.includes(nextText)) return prev.map(r => ({ ...r }));
+  return prev.concat(next.map(r => ({ transcript: r.transcript, isFinal: true })));
+}
+
 export function collectSpeechTranscript(results) {
   const finals = [];
   let interim = '';
@@ -1082,10 +1265,13 @@ export function reduceSpeechSession(session, event) {
   };
   const type = event && event.type;
   if (type === 'result') {
-    next.results = (event.results || []).map(r => ({
+    const incoming = (event.results || []).map(r => ({
       transcript: String(r && r.transcript || ''),
       isFinal: !!(r && r.isFinal),
     }));
+    // Never replace a longer transcript with an empty or shorter trailing event.
+    // iOS stop() sometimes emits that, which used to wipe the words before fill.
+    next.results = mergeSpeechResults(session.results, incoming);
   } else if (type === 'end') next.ended = true;
   else if (type === 'stop') next.stopRequested = true;
   else if (type === 'grace') next.graceElapsed = true;
@@ -1098,7 +1284,9 @@ export function reduceSpeechSession(session, event) {
 
   const text = collectSpeechTranscript(next.results);
   const fatal = FATAL_SPEECH_ERRORS.has(next.error);
-  if (text && (next.ended || next.graceElapsed || fatal)) {
+  // Tap-to-stop applies immediately. Waiting for onend drops the words on iOS,
+  // where stop() often never ends the session and later events reset the timer.
+  if (text && (next.ended || next.stopRequested || next.graceElapsed || fatal)) {
     next.applied = true;
     return { session: next, action: 'apply', text, code: next.error };
   }
