@@ -8,6 +8,8 @@ import {
   describeVoiceError,
   matchCustomerPhrase,
   voiceFillSummary,
+  appendVoiceNote,
+  voiceCaptureSummary,
 } from './outbound-voice.js';
 
 const NOW = new Date(2026, 10, 10, 12, 0, 0); // Tue Nov 10, 2026
@@ -526,4 +528,26 @@ test('alias map can retarget a nickname without being stored', () => {
   });
   expectFilled(via, { customer: 'Allsethealth', method: 'pickup' });
   assert.equal(voiceFillSummary({ filled: ['a', 'b', 'c', 'd', 'e'], ambiguous: ['carrier'], review: [] }), 'Filled 5 fields, 1 needs a check');
+});
+
+test('voice note appends the raw transcript and keeps what was already typed', () => {
+  assert.equal(appendVoiceNote('', 'all set health PO 48213'), 'Voice: all set health PO 48213');
+  assert.equal(appendVoiceNote('leave at dock', 'twenty pallets'), 'leave at dock\nVoice: twenty pallets');
+  assert.equal(
+    appendVoiceNote('leave at dock\nVoice: first', 'second try'),
+    'leave at dock\nVoice: first\nVoice: second try'
+  );
+  assert.equal(appendVoiceNote('leave at dock', '   '), 'leave at dock');
+  assert.equal(
+    voiceCaptureSummary({ filled: [], ambiguous: [], review: [] }),
+    "Couldn't pick out fields, check the note"
+  );
+  assert.equal(
+    voiceCaptureSummary({ filled: ['note'], ambiguous: ['carrier'], review: [] }),
+    "Couldn't pick out fields, check the note"
+  );
+  assert.equal(
+    voiceCaptureSummary({ filled: ['customer', 'reference', 'note'], ambiguous: ['carrier'], review: [] }),
+    'Filled 2 fields, 1 needs a check'
+  );
 });

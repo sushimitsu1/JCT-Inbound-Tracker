@@ -92,6 +92,7 @@ async function readForm(page) {
       carrier: marked('f_extra'),
       date: marked('f_date'),
       cartons: marked('f_cartons'),
+      note: marked('f_note'),
       method: document.querySelector('.seg button.on-a')?.textContent || '',
       methodVoice: !!document.querySelector('.seg')?.closest('.field')?.classList.contains('voice-filled'),
       summary: document.getElementById('voiceSummary')?.textContent || '',
@@ -118,6 +119,9 @@ function assertFilled(form, label, spec) {
   if (!form.methodVoice) problems.push('method missing Voice mark');
   if (!form.summary.startsWith('Filled ')) problems.push(`summary ${form.summary}`);
   if (!form.heard.includes('all set health')) problems.push('transcript missing');
+  if (!form.note.value.includes('Voice:')) problems.push(`note missing Voice line: ${form.note.value}`);
+  if (!form.note.value.includes('all set health')) problems.push('note missing transcript');
+  if (!form.note.voice) problems.push('note missing Voice mark');
   if (problems.length) throw new Error(`${label}: ${problems.join('; ')} | ${JSON.stringify(form)}`);
 }
 

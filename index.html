@@ -382,7 +382,7 @@ import {
 import {
   getStorage, ref, uploadBytes, getDownloadURL, deleteObject
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
-import { parseOutboundTranscript, createSpeechSession, reduceSpeechSession, describeVoiceError, voiceFillSummary } from "./outbound-voice.js";
+import { parseOutboundTranscript, createSpeechSession, reduceSpeechSession, describeVoiceError, appendVoiceNote, voiceCaptureSummary } from "./outbound-voice.js";
 
 /* ================= Firebase ================= */
 const firebaseConfig = {
@@ -1439,9 +1439,11 @@ function applyVoiceToState(text){
   const parsed = parseOutboundTranscript(text, {customers: knownCustomers(), now: new Date(), aliases: state.customerAliases || {}});
   const draftKey = {customer:'customer', reference:'reference', shipDate:'shipDate', carrier:'carrier', cartons:'cartons', skus:'skus', note:'note', tag:'tag'};
   const review = new Set(parsed.review || []);
+  const existingNote = state.formDraft.note || '';
   if(!state.voice.suggestions) state.voice.suggestions = {customer:[]};
   state.voice.suggestions.customer = (parsed.suggestions && parsed.suggestions.customer) || [];
   for(const key of ['customer','reference','shipDate','method','carrier','cartons','skus','note','tag']){
+    if(key==='note') continue;
     if(parsed.ambiguous.includes(key)){
       state.voice.ambiguous[key] = true;
       delete state.voice.filled[key];
@@ -1455,7 +1457,12 @@ function applyVoiceToState(text){
       else state.formDraft[draftKey[key]] = parsed.fields[key];
     }
   }
-  state.voice.summary = voiceFillSummary(parsed);
+  state.formDraft.note = appendVoiceNote(existingNote, text);
+  if(String(text || '').trim()){
+    state.voice.filled.note = true;
+    delete state.voice.ambiguous.note;
+  }
+  state.voice.summary = voiceCaptureSummary(parsed);
   state.voice.transcript = text;
   state.voice.interim = '';
   state.voice.finalText = '';

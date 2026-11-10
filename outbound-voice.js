@@ -229,6 +229,28 @@ export function voiceFillSummary(parsed) {
   return `Filled ${fieldsWord}, ${c} ${c === 1 ? 'needs' : 'need'} a check`;
 }
 
+/** Append the raw transcript without removing a note the worker already typed. */
+export function appendVoiceNote(existing, transcript) {
+  const said = String(transcript ?? '').replace(/\s+/g, ' ').trim();
+  const prior = String(existing ?? '').replace(/\s+$/g, '');
+  if (!said) return prior;
+  const line = `Voice: ${said}`;
+  if (!prior.trim()) return line;
+  return `${prior}\n${line}`;
+}
+
+/** Summary after a capture. The voice line in Note is not counted as a parsed field. */
+export function voiceCaptureSummary(parsed) {
+  const filled = ((parsed && parsed.filled) || []).filter(key => key !== 'note');
+  const review = (parsed && parsed.review) || [];
+  if (!filled.length && !review.length) return "Couldn't pick out fields, check the note";
+  return voiceFillSummary({
+    filled,
+    ambiguous: (parsed && parsed.ambiguous) || [],
+    review,
+  });
+}
+
 export function fold(s) {
   return deaccent(String(s ?? ''))
     .toLowerCase()
