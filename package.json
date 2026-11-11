@@ -1,0 +1,12 @@
+{
+  "name": "manifest-tracker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test outbound-voice.test.js",
+    "test:e2e": "node outbound-voice.e2e.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.49.1"
+  }
+}
