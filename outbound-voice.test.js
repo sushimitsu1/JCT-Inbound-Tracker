@@ -10,6 +10,11 @@ import {
   voiceFillSummary,
   appendVoiceNote,
   voiceCaptureSummary,
+  topCarriers,
+  CARRIER_NAMES,
+  parseQuantityText,
+  formatQuantityText,
+  quantityState,
 } from './outbound-voice.js';
 
 const NOW = new Date(2026, 10, 10, 12, 0, 0); // Tue Nov 10, 2026
@@ -550,4 +555,37 @@ test('voice note appends the raw transcript and keeps what was already typed', (
     voiceCaptureSummary({ filled: ['customer', 'reference', 'note'], ambiguous: ['carrier'], review: [] }),
     'Filled 2 fields, 1 needs a check'
   );
+});
+
+test('quantity buttons write the same cartons string the text field saved', () => {
+  assert.deepEqual(parseQuantityText('12 cartons, 20 pallets'), { cartons: 12, pallets: 20 });
+  assert.equal(formatQuantityText({ cartons: 12, pallets: 20 }), '12 cartons, 20 pallets');
+  assert.equal(formatQuantityText(parseQuantityText('20 pallets')), '20 pallets');
+  assert.equal(formatQuantityText(parseQuantityText('1 carton')), '1 carton');
+  assert.equal(formatQuantityText(parseQuantityText('1 pallet')), '1 pallet');
+  assert.equal(formatQuantityText(parseQuantityText('20 plts')), '20 pallets');
+  assert.equal(formatQuantityText(parseQuantityText('1452')), '1452 cartons');
+  assert.equal(formatQuantityText({ cartons: 0, pallets: 0 }), '');
+  assert.equal(quantityState('').unit, 'pallets');
+  assert.equal(quantityState('6 cartons').unit, 'cartons');
+  assert.equal(quantityState('20 pallets').unit, 'pallets');
+  assert.equal(quantityState('12 cartons, 20 pallets').cartons, 12);
+  assert.equal(quantityState('12 cartons, 20 pallets').pallets, 20);
+});
+
+test('carrier chips rank demo rows first, then the known catalog', () => {
+  const demo = [
+    { carrier: 'Estes' },
+    { carrier: 'Saia' },
+    { carrier: 'Old Dominion' },
+    { carrier: 'FedEx' },
+    { carrier: 'Saia' },
+    { carrier: 'Estes' },
+  ];
+  const ranked = topCarriers(demo, CARRIER_NAMES, 6);
+  assert.deepEqual(ranked.slice(0, 4), ['Estes', 'Saia', 'FedEx', 'Old Dominion']);
+  assert.equal(ranked.length, 6);
+  for (const name of ranked) assert.equal(CARRIER_NAMES.includes(name), true);
+  assert.deepEqual(topCarriers([{ carrier: 'estes' }, { carrier: 'Estes' }], ['Estes', 'Saia'], 6), ['Estes', 'Saia']);
+  assert.deepEqual(topCarriers([], ['Estes', 'Saia'], 6), ['Estes', 'Saia']);
 });

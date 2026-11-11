@@ -245,6 +245,22 @@ table.grid{width:100%;border-collapse:collapse;background:var(--card);border-rad
 .seg button{flex:1;border:none;background:#fff;padding:11px 6px;font-size:14.5px;font-weight:700;cursor:pointer;color:var(--ink-soft);}
 .seg button.on-a{background:var(--rust-bg);color:var(--rust);}
 .seg button.on-b{background:#dce7f1;color:var(--navy-soft);}
+.seg.seg-lg button{min-height:48px;padding:12px 10px;font-size:16px;font-weight:800;}
+.seg.seg-status{flex-wrap:wrap;}
+.seg.seg-status button{flex:1 1 46%;min-height:48px;}
+.pick-row{display:flex;flex-wrap:wrap;gap:8px;}
+.pick-chip{min-height:48px;padding:10px 14px;border-radius:12px;border:1.5px solid var(--line-2);background:#fff;color:var(--navy);font-family:'Archivo',sans-serif;font-size:15px;font-weight:800;cursor:pointer;}
+.pick-chip.on{background:var(--navy);color:#fff;border-color:var(--navy);}
+.field.voice-filled .pick-chip.on,.field.voice-filled .seg.seg-lg button.on-a,.field.voice-filled .seg.seg-lg button.on-b{outline:2.5px solid var(--teal);outline-offset:1px;}
+.qty-step{display:flex;gap:8px;align-items:center;margin-top:8px;}
+.qty-step button{min-width:56px;min-height:56px;border-radius:12px;border:1.5px solid var(--line-2);background:#fff;color:var(--navy);font-size:28px;font-weight:800;cursor:pointer;}
+.qty-step input{flex:1;min-height:56px;text-align:center;font-size:28px;font-weight:800;}
+.carrier-input{margin-top:8px;}
+.carrier-input.is-hidden{display:none;}
+@media(max-width:700px){
+  .seg.seg-method{flex-direction:column;}
+  .seg.seg-method button{width:100%;min-height:48px;}
+}
 
 .attach-box{border:1.5px solid var(--line);border-radius:11px;padding:15px;background:#fbfaf7;}
 .attach-list{display:flex;flex-direction:column;gap:9px;margin-bottom:12px;}
@@ -382,7 +398,7 @@ import {
 import {
   getStorage, ref, uploadBytes, getDownloadURL, deleteObject
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
-import { parseOutboundTranscript, createSpeechSession, reduceSpeechSession, describeVoiceError, appendVoiceNote, voiceCaptureSummary } from "./outbound-voice.js";
+import { parseOutboundTranscript, createSpeechSession, reduceSpeechSession, describeVoiceError, appendVoiceNote, voiceCaptureSummary, CARRIER_NAMES, topCarriers, formatQuantityText, quantityState } from "./outbound-voice.js";
 
 /* ================= Firebase ================= */
 const firebaseConfig = {
@@ -1074,6 +1090,71 @@ function datePopHtml(){
 }
 
 /* ================= form ================= */
+function sameLabel(a, b){
+  return String(a||'').trim().toLowerCase() === String(b||'').trim().toLowerCase();
+}
+function clearVoiceMark(key){
+  if(!state.voice) return;
+  delete state.voice.filled[key];
+  delete state.voice.ambiguous[key];
+}
+function syncQtyFrom(cartonsVal){
+  const src = cartonsVal || '';
+  if(!state.qty || state.qty.source !== src){
+    state.qty = quantityState(src);
+    state.qty.source = src;
+  }
+  return state.qty;
+}
+function writeQty(qty){
+  const formatted = formatQuantityText(qty);
+  qty.source = formatted;
+  if(state.formDraft) state.formDraft.cartons = formatted;
+  return formatted;
+}
+function outboundChoicesHtml(c, extraVal, cartonsVal, statusVal){
+  const choices = topCarriers(state.outbound, CARRIER_NAMES, 6);
+  const known = choices.some(name => sameLabel(name, extraVal));
+  const showInput = !!state.carrierOther || (!!String(extraVal||'').trim() && !known);
+  const chips = choices.map(name =>
+    `<button type="button" class="pick-chip${!showInput && sameLabel(name, extraVal)?' on':''}" data-action="carrier-pick" data-v="${esc(name)}">${esc(name)}</button>`
+  ).join('');
+  const qty = syncQtyFrom(cartonsVal);
+  const n = qty[qty.unit] || 0;
+  const statuses = c.statusOrder.map(s =>
+    `<button type="button" class="${statusVal===s?'on-b':''}" data-action="form-status" data-v="${s}">${c.statusMeta[s].label}</button>`
+  ).join('');
+  return `
+    <div class="field${voiceClass('method')}"><label>Method${voiceBadge('method')}</label>
+      <div class="seg seg-lg seg-method" id="methodSeg">
+        <button type="button" class="${state.formMethod==='pickup'?'on-a':''}" data-action="form-method" data-v="pickup">Pickup</button>
+        <button type="button" class="${state.formMethod==='delivery'?'on-b':''}" data-action="form-method" data-v="delivery">Delivery</button>
+      </div>
+      ${voiceHint('method')}
+    </div>
+    <div class="field${voiceClass('carrier')}"><label>${c.extraLabel}${voiceBadge('carrier')}</label>
+      <div class="pick-row" id="carrierChips">${chips}<button type="button" class="pick-chip${showInput?' on':''}" data-action="carrier-pick" data-v="__other__">Other</button></div>
+      <input type="text" id="f_extra" class="carrier-input${showInput?'':' is-hidden'}" value="${esc(extraVal)}" placeholder="${c.extraPlaceholder||''}">
+      ${voiceHint('carrier')}
+    </div>
+    <div class="field${voiceClass('cartons')}"><label>Quantity${voiceBadge('cartons')}</label>
+      <div class="seg seg-lg" id="qtyUnit">
+        <button type="button" class="${qty.unit==='pallets'?'on-a':''}" data-action="qty-unit" data-v="pallets">Pallets</button>
+        <button type="button" class="${qty.unit==='cartons'?'on-b':''}" data-action="qty-unit" data-v="cartons">Cartons</button>
+      </div>
+      <div class="qty-step">
+        <button type="button" data-action="qty-step" data-v="-1" aria-label="Decrease">−</button>
+        <input id="f_qty" type="text" inputmode="numeric" pattern="[0-9]*" value="${n?String(n):''}" aria-label="Quantity">
+        <button type="button" data-action="qty-step" data-v="1" aria-label="Increase">+</button>
+      </div>
+      <input type="hidden" id="f_cartons" value="${esc(cartonsVal)}">
+      ${voiceHint('cartons')}
+    </div>
+    <div class="field"><label>Status</label>
+      <div class="seg seg-lg seg-status" id="statusSeg">${statuses}</div>
+      <input type="hidden" id="f_status" value="${esc(statusVal)}">
+    </div>`;
+}
 function formHtml(){
   if(!state.showForm) return '';
   const c = cfg();
@@ -1103,27 +1184,27 @@ function formHtml(){
       <div class="panel-b">
         ${state.mode==='outbound' ? voiceBarHtml() : ''}
         <div class="field${voiceClass('customer')}"><label>Customer${voiceBadge('customer')}</label><input type="text" id="f_customer" value="${esc(customerVal)}" placeholder="e.g. Allsetthealth">${voiceHint('customer')}${customerChipsHtml()}</div>
+        ${state.mode==='outbound' ? outboundChoicesHtml(c, extraVal, cartonsVal, statusVal) : ''}
         <div class="row2">
           <div class="field${voiceClass('reference')}"><label>${c.numberLabel}${voiceBadge('reference')}</label><input type="text" id="f_number" value="${esc(numberVal)}" placeholder="${c.numberPlaceholder}" style="font-family:'JetBrains Mono',monospace;font-weight:700;letter-spacing:.04em;">${voiceHint('reference')}</div>
-          <div class="field${voiceClass('carrier')}"><label>${c.extraLabel}${voiceBadge('carrier')}</label>${extraFieldHtml}${voiceHint('carrier')}</div>
+          ${state.mode==='outbound' ? '' : `<div class="field"><label>${c.extraLabel}</label>${extraFieldHtml}</div>`}
         </div>
         <div class="row2">
           <div class="field${voiceClass('shipDate')}"><label>${c.dateLabel}${voiceBadge('shipDate')}</label><input type="date" id="f_date" value="${esc(dateVal)}">${voiceHint('shipDate')}</div>
           <div class="field"><label>Time / window</label><input type="text" id="f_time" value="${esc(timeVal)}" placeholder="11:00 AM or 1-2pm"></div>
         </div>
-        <div class="row2">
-          <div class="field${voiceClass('cartons')}"><label>Cartons / Pallets${voiceBadge('cartons')}</label><input type="text" id="f_cartons" value="${esc(cartonsVal)}" placeholder="e.g. 1452 or 20 plts">${voiceHint('cartons')}</div>
-          <div class="field${voiceClass('method')}"><label>${c.methodLabel}${voiceBadge('method')}</label>
+        ${state.mode==='outbound' ? '' : `<div class="row2">
+          <div class="field"><label>Cartons / Pallets</label><input type="text" id="f_cartons" value="${esc(cartonsVal)}" placeholder="e.g. 1452 or 20 plts"></div>
+          <div class="field"><label>${c.methodLabel}</label>
             <div class="seg">
               <button type="button" class="${state.formMethod===c.methodOptions[0][0]?'on-a':''}" data-action="form-method" data-v="${c.methodOptions[0][0]}">${c.methodOptions[0][1]}</button>
               <button type="button" class="${state.formMethod===c.methodOptions[1][0]?'on-b':''}" data-action="form-method" data-v="${c.methodOptions[1][0]}">${c.methodOptions[1][1]}</button>
             </div>
-            ${voiceHint('method')}
           </div>
-        </div>
+        </div>`}
         <div class="row2">
           <div class="field${voiceClass('skus')}"><label>SKUs${voiceBadge('skus')}</label><input type="text" id="f_skus" value="${esc(skusVal)}" placeholder="e.g. 13">${voiceHint('skus')}</div>
-          <div class="field"><label>Status</label><select id="f_status">${c.statusOrder.map(s=>`<option value="${s}" ${statusVal===s?'selected':''}>${c.statusMeta[s].label}</option>`).join('')}</select></div>
+          ${state.mode==='outbound' ? '' : `<div class="field"><label>Status</label><select id="f_status">${c.statusOrder.map(s=>`<option value="${s}" ${statusVal===s?'selected':''}>${c.statusMeta[s].label}</option>`).join('')}</select></div>`}
         </div>
         <div class="field${voiceClass('note')}"><label>Note${voiceBadge('note')}</label><textarea id="f_note" placeholder="e.g. Sort by FBA ID, unload/relabel/reload…">${esc(noteVal)}</textarea>${voiceHint('note')}</div>
         <div class="field${voiceClass('tag')}"><label>${c.tagLabel}${voiceBadge('tag')}</label><input type="text" id="f_tag" value="${esc(tagVal)}" placeholder="${c.tagPlaceholder}">${voiceHint('tag')}</div>
@@ -1463,6 +1544,7 @@ function applyVoiceToState(text){
     delete state.voice.ambiguous.note;
   }
   state.voice.summary = voiceCaptureSummary(parsed);
+  if(parsed.filled.includes('carrier')) state.carrierOther = false;
   state.voice.transcript = text;
   state.voice.interim = '';
   state.voice.finalText = '';
@@ -1632,11 +1714,14 @@ function toggleVoice(){
 function resetVoiceForForm(){
   discardVoice();
   state.formDraft = null;
+  state.qty = null;
+  state.carrierOther = false;
   state.voice = freshVoice(voiceDemo);
 }
 
 /* ================= render ================= */
 function render(){
+  const formWasOpen = !!document.getElementById('formOverlay');
   if(!skipCapture && state.showForm && state.mode==='outbound') captureOutboundDraft();
   skipCapture = false;
   const l = getFiltered();
@@ -1649,6 +1734,10 @@ function render(){
   document.getElementById('root').innerHTML =
     headerHtml() + controlsHtml() + `<div class="view">${body}</div>` +
     formHtml() + importHtml() + batchHtml() + datePopHtml();
+  if(formWasOpen){
+    const panel = document.querySelector('.panel');
+    if(panel) panel.style.animation = 'none';
+  }
   wireInputs();
 }
 function wireInputs(){
@@ -1676,6 +1765,37 @@ function wireInputs(){
   if(pd) pd.focus();
   const lang = document.getElementById('voiceLang');
   if(lang) lang.onchange = e => setVoiceLang(e.target.value);
+  const qtyInput = document.getElementById('f_qty');
+  if(qtyInput) qtyInput.addEventListener('input', () => {
+    const n = Math.max(0, parseInt(String(qtyInput.value).replace(/\D/g,''), 10) || 0);
+    const qty = syncQtyFrom((document.getElementById('f_cartons')||{}).value || '');
+    qty[qty.unit] = n;
+    const formatted = writeQty(qty);
+    const hidden = document.getElementById('f_cartons');
+    if(hidden) hidden.value = formatted;
+    clearVoiceMark('cartons');
+    const field = qtyInput.closest('.field');
+    if(field){
+      field.classList.remove('voice-filled','voice-check');
+      const badge = field.querySelector('.voice-badge');
+      if(badge) badge.remove();
+    }
+  });
+  const carrierInput = document.getElementById('f_extra');
+  if(carrierInput && state.mode==='outbound') carrierInput.addEventListener('input', () => {
+    state.carrierOther = true;
+    if(state.formDraft) state.formDraft.carrier = carrierInput.value;
+    clearVoiceMark('carrier');
+    const field = carrierInput.closest('.field');
+    if(field){
+      field.classList.remove('voice-filled','voice-check');
+      const badge = field.querySelector('.voice-badge');
+      if(badge) badge.remove();
+      field.querySelectorAll('.pick-chip').forEach(chip => {
+        chip.classList.toggle('on', chip.dataset.v === '__other__');
+      });
+    }
+  });
 
   // Batch grid: mutate state.batchRows in place on every edit, WITHOUT
   // re-rendering — that keeps the caret where the user is typing. The
@@ -1828,8 +1948,54 @@ document.addEventListener('click', e => {
   else if(act==='att-del'){ e.stopPropagation(); removeAttachment(id, v); }
   else if(act==='form-method'){
     state.formMethod=v;
-    document.querySelectorAll('.seg button').forEach(b=>b.className='');
-    el.className = v===cfg().methodOptions[0][0] ? 'on-a' : 'on-b';
+    clearVoiceMark('method');
+    if(state.mode==='outbound'){ render(); }
+    else {
+      const seg = el.closest('.seg');
+      if(seg) seg.querySelectorAll('button').forEach(b=>b.className='');
+      el.className = v===cfg().methodOptions[0][0] ? 'on-a' : 'on-b';
+    }
+  }
+  else if(act==='carrier-pick'){
+    captureOutboundDraft();
+    if(!state.formDraft) state.formDraft = blankOutboundDraft();
+    if(v==='__other__') state.carrierOther = true;
+    else {
+      state.carrierOther = false;
+      state.formDraft.carrier = v;
+      clearVoiceMark('carrier');
+    }
+    skipCapture = true;
+    render();
+    if(v==='__other__'){
+      const inp = document.getElementById('f_extra');
+      if(inp) inp.focus();
+    }
+  }
+  else if(act==='qty-unit'){
+    captureOutboundDraft();
+    const qty = syncQtyFrom(state.formDraft ? state.formDraft.cartons : '');
+    qty.unit = v==='cartons' ? 'cartons' : 'pallets';
+    clearVoiceMark('cartons');
+    skipCapture = true;
+    render();
+  }
+  else if(act==='qty-step'){
+    captureOutboundDraft();
+    const qty = syncQtyFrom(state.formDraft ? state.formDraft.cartons : '');
+    qty[qty.unit] = Math.max(0, (Number(qty[qty.unit]) || 0) + (Number(v) || 0));
+    const formatted = writeQty(qty);
+    if(state.formDraft) state.formDraft.cartons = formatted;
+    clearVoiceMark('cartons');
+    skipCapture = true;
+    render();
+  }
+  else if(act==='form-status'){
+    captureOutboundDraft();
+    if(!state.formDraft) state.formDraft = blankOutboundDraft();
+    state.formDraft.status = v;
+    skipCapture = true;
+    render();
   }
   else if(act==='close-form'){ closeForm(); }
   else if(act==='voice-mic'){ toggleVoice(); }
@@ -1989,6 +2155,7 @@ async function saveForm(){
     [c.tagField]:g('f_tag').trim(),
   };
   if(!data.customer || !data[c.numberField]){ alert(`Customer and ${c.numberLabel.toLowerCase()} are required.`); return; }
+  if(voiceDemo) window.__lastOutboundPayload = data;
   if(state.editingId){
     await patchRecord(state.mode, state.editingId, data);
     state.showForm=false; state.editingId=null;

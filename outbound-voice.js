@@ -105,6 +105,67 @@ const CARRIERS = [
   ['yrc', 'YRC'],
 ].sort((a, b) => b[0].length - a[0].length);
 
+export const CARRIER_NAMES = [];
+for (const [, display] of CARRIERS) {
+  if (!CARRIER_NAMES.includes(display)) CARRIER_NAMES.push(display);
+}
+
+/** Most-used carriers first, then the catalog, capped at `limit`. */
+export function topCarriers(records, catalog, limit = 6) {
+  const counts = new Map();
+  for (const row of records || []) {
+    const raw = String(row && (row.carrier || row.extra) || '').trim();
+    if (!raw) continue;
+    const key = fold(raw);
+    const known = (catalog || []).find(name => fold(name) === key);
+    const name = known || raw;
+    const id = fold(name);
+    const prev = counts.get(id);
+    counts.set(id, { name, n: (prev ? prev.n : 0) + 1 });
+  }
+  const ranked = [...counts.values()].sort((a, b) => b.n - a.n || a.name.localeCompare(b.name));
+  const picked = [];
+  const has = name => picked.some(p => fold(p) === fold(name));
+  for (const row of ranked) {
+    if (picked.length >= limit) break;
+    if (!has(row.name)) picked.push(row.name);
+  }
+  for (const name of catalog || []) {
+    if (picked.length >= limit) break;
+    if (!has(name)) picked.push(name);
+  }
+  return picked;
+}
+
+export function parseQuantityText(text) {
+  const s = String(text || '');
+  const cartons = s.match(/(\d+)\s*(?:cartons?|ctns?)\b/i);
+  const pallets = s.match(/(\d+)\s*(?:pallets?|plts?)\b/i);
+  let c = cartons ? parseInt(cartons[1], 10) : 0;
+  let p = pallets ? parseInt(pallets[1], 10) : 0;
+  if (!cartons && !pallets) {
+    const bare = s.match(/^\s*(\d+)\s*$/);
+    if (bare) c = parseInt(bare[1], 10);
+  }
+  return { cartons: c || 0, pallets: p || 0 };
+}
+
+export function formatQuantityText(qty) {
+  const c = Math.max(0, Math.floor(Number(qty && qty.cartons) || 0));
+  const p = Math.max(0, Math.floor(Number(qty && qty.pallets) || 0));
+  const parts = [];
+  if (c) parts.push(`${c} ${c === 1 ? 'carton' : 'cartons'}`);
+  if (p) parts.push(`${p} ${p === 1 ? 'pallet' : 'pallets'}`);
+  return parts.join(', ');
+}
+
+export function quantityState(text) {
+  const q = parseQuantityText(text);
+  const blank = !String(text || '').trim();
+  const unit = q.pallets > 0 || blank ? 'pallets' : 'cartons';
+  return { cartons: q.cartons, pallets: q.pallets, unit };
+}
+
 const AMBIGUOUS_NAME = /^(?:tbd|tba|unknown|unsure|n\/?a|idk|not sure|no se|nose|不知道|不确定|未定|待定)$/i;
 
 const KEYWORDS = [
